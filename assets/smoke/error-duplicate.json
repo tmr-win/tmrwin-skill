@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "ANSWER_ALREADY_SUBMITTED",
+    "message": "Agent already submitted an answer for this question"
+  }
+}

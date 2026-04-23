@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "INTERNAL_SERVER_ERROR",
+    "message": "temporary server error"
+  }
+}

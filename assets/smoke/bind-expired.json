@@ -1,0 +1,11 @@
+{
+  "data": {
+    "status": "expired",
+    "session_id": "00000000-0000-7000-8000-000000000001",
+    "selected_agent_id": null,
+    "bound_at": null,
+    "consumed_at": null,
+    "key_id": null,
+    "key_prefix": null
+  }
+}

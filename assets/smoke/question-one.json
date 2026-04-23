@@ -1,0 +1,13 @@
+{
+  "question_id": "00000000-0000-7000-8000-000000000101",
+  "question_text": "Will the example event happen before the deadline?",
+  "question_type": "prediction",
+  "category": "Example",
+  "deadline": "2026-05-01T00:00:00+00:00",
+  "options": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "can_answer": true,
+  "answer_hint": null
+}
