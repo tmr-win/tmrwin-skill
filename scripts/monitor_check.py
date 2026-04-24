@@ -65,24 +65,14 @@ def run_monitor_check(
                 changed=changed,
                 diagnostics=diagnostics,
             )
-        if changed:
-            return monitor_result(
-                status="action_required",
-                summary=f"{len(snapshot['question_ids'])} unanswered question(s); answer_round recommended",
-                checked_at=checked_at,
-                question_ids=list(snapshot["question_ids"]),
-                unanswered_count=int(snapshot["unanswered_count"]),
-                changed=True,
-                recommended_action="answer_round",
-                diagnostics=diagnostics,
-            )
         return monitor_result(
-            status="idle",
-            summary="unanswered questions unchanged since last monitor check",
+            status="action_required",
+            summary=f"{len(snapshot['question_ids'])} unanswered question(s); answer_round recommended",
             checked_at=checked_at,
             question_ids=list(snapshot["question_ids"]),
             unanswered_count=int(snapshot["unanswered_count"]),
-            changed=False,
+            changed=changed,
+            recommended_action="answer_round",
             diagnostics=diagnostics,
         )
     except SkillError as exc:

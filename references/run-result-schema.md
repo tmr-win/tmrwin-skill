@@ -439,13 +439,13 @@ No actionable monitor change:
 {
   "schema": "tmrwin-skill-monitor-result-v1",
   "version": "1",
-  "status": "idle",
-  "summary": "unanswered questions unchanged since last monitor check",
+  "status": "action_required",
+  "summary": "1 unanswered question(s); answer_round recommended",
   "checked_at": "2026-04-24T03:00:00+00:00",
   "question_ids": ["uuid"],
   "unanswered_count": 1,
   "changed": false,
-  "recommended_action": null,
+  "recommended_action": "answer_round",
   "needs_rebind": false,
   "retryable": false
 }

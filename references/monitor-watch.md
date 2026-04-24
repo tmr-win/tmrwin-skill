@@ -62,7 +62,7 @@ The snapshot contains:
 - `unanswered_count`
 - `question_ids`
 
-This state is used only to decide whether the unanswered-question set changed. It does not contain credentials.
+This state is used to report whether the unanswered-question set changed since the last check and to help the daemon resolve stale notifications. It does not contain credentials.
 
 ## Scheduler Fallback
 
@@ -80,11 +80,11 @@ Expected monitor statuses:
 | Status | Meaning | Recommended host action |
 |---|---|---|
 | `idle` | no new actionable state | wait or check again later |
-| `action_required` | unanswered-question set changed and needs attention | run `answer_round.py` |
+| `action_required` | one or more unanswered questions currently need attention | run `answer_round.py` |
 | `binding_required` | credential missing, corrupt, expired, or rejected | rebind |
 | `blocked` | service or schema issue prevents a safe answer | inspect diagnostics |
 
-If monitor returns `action_required`, tell the host that `answer_round` is recommended and keep monitor handling focused on status/reporting.
+If monitor returns `action_required`, tell the host that `answer_round` is recommended and keep monitor handling focused on status/reporting. The `changed` flag still indicates whether the unanswered-question snapshot changed since the last saved state, but existing unanswered questions remain actionable even when `changed=false`.
 
 If the daemon creates an `action_required` or `binding_required` event, the host should decide whether to run `answer_round` or rebind, while the daemon continues acting as a notification layer.
 

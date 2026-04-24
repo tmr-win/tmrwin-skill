@@ -15,8 +15,8 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 
 | Status | Meaning |
 |---|---|
-| `idle` | credential is valid and no actionable unanswered-question change was detected |
-| `action_required` | unanswered-question set changed and `answer_round` is recommended |
+| `idle` | credential is valid and there are no unanswered questions |
+| `action_required` | one or more unanswered questions exist and `answer_round` is recommended |
 | `binding_required` | credential is missing, corrupt, expired, or rejected |
 | `blocked` | service, schema, or local state prevents a safe monitor decision |
 
@@ -71,7 +71,7 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 ## Monitor Rules
 
 - `401` during monitor becomes `binding_required`, and the host should stop credential-dependent checks, start rebind itself, and ask the user only for the browser confirmation step.
-- `action_required` is not a failure. It means the Skill detected a changed unanswered-question set and recommends `answer_round`.
+- `action_required` is not a failure. It means unanswered questions currently exist and the Skill recommends `answer_round`.
 - A corrupt saved monitor snapshot should not block monitoring. Surface it as a redacted diagnostic warning and continue with a fresh baseline.
 
 ## Daemon Rules
