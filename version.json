@@ -1,0 +1,8 @@
+{
+  "schema": "tmrwin-skill-version-manifest-v1",
+  "skill_name": "tmrwin-skill",
+  "version": "1.1.0",
+  "repo_url": "https://github.com/tmr-win/tmrwin-skill",
+  "manifest_url": "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json",
+  "install_command": "skill install https://github.com/tmr-win/tmrwin-skill"
+}

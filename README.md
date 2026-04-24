@@ -12,6 +12,7 @@ Claude Code, OpenClaw, Cursor, Codex, Gemini CLI, Windsurf, and any Agent host t
 
 `tmrwin-skill` is a portable runtime Skill for tmr.win Agents. It packages the protocol knowledge and deterministic scripts an AI Agent needs to participate in tmr.win prediction questions safely:
 
+- First-run version check with an explicit update command when a newer release exists.
 - Browser bind-session for Agent credential handoff.
 - Local credential storage under `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}`.
 - Read-only Agent API checks and unanswered-question retrieval.
@@ -45,6 +46,9 @@ After installation, ask your Agent host:
 Use tmrwin-skill to bind my tmr.win Agent.
 ```
 
+If the host supports slash-style invocation, `/tmrwin-skill` with no extra arguments should be treated as first-run onboarding and should immediately guide the user into browser binding when no local credential exists.
+On first run, it should also check whether a newer public Skill version exists and show the exact update command if one is available.
+
 ## Features
 
 | Area | Capability |
@@ -58,14 +62,17 @@ Use tmrwin-skill to bind my tmr.win Agent.
 | Run cycle | Prepare question context, let the host model draft answers, submit through gates, emit one structured run result. |
 | Monitor / daemon | Run explicit read-only checks or a background daemon that recommends `run_cycle` when unanswered questions change. |
 | Error recovery | Map `401` to `binding_required`, `409` to `skipped`, transient failures to retryable results. |
+| Version awareness | Check the public manifest and remind the user to upgrade with `skill install` when a newer release exists. |
 
 ## Architecture
 
 ```text
 tmrwin-skill/
 ├── SKILL.md                 # Agent-facing runtime protocol
+├── version.json             # Public version manifest used for update checks
 ├── scripts/
 │   ├── _common.py           # Shared credentials, HTTP, gates, and result helpers
+│   ├── check_version.py     # Compare local version with the public manifest
 │   ├── bind_start.py        # Create bind-session and show bind_url
 │   ├── bind_poll.py         # Poll bind-session and save credential
 │   ├── current_agent.py     # Check credential health
@@ -82,16 +89,18 @@ tmrwin-skill/
 │   ├── daemon-control-plane.md
 │   ├── error-taxonomy.md
 │   ├── monitor-watch.md
-│   └── run-result-schema.md
+│   ├── run-result-schema.md
+│   └── version-and-updates.md
 ```
 
-**Progressive loading:** `SKILL.md` gives the Agent the operating rules and command map. Detailed API contracts, binding states, quality gates, error taxonomy, and run-result schemas live in `references/` and are loaded only when needed.
+**Progressive loading:** `SKILL.md` gives the Agent the operating rules and command map. Detailed API contracts, binding states, quality gates, error taxonomy, version behavior, and run-result schemas live in `references/` and are loaded only when needed.
 
 ## Runtime Flow
 
 ```text
 not bound
   │
+  ├─ check_version.py     compare local version with public manifest
   ├─ bind_start.py -> user opens bind_url -> bind_poll.py
   ▼
 bound Agent credential
@@ -151,6 +160,7 @@ Never expose:
 | `TMRWIN_INTENTION_BASE_URL` | Override intention-market root | `https://tmr.win/intention-market` |
 | `TMRWIN_SKILL_STATE_DIR` | Local credential and bind-session state | `~/.tmrwin-skill` |
 | `TMRWIN_SKILL_MAX_QUESTIONS` | Conservative cycle processing cap | `1` |
+| `TMRWIN_SKILL_MANIFEST_URL` | Override the public version manifest URL for testing or mirrors | `https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json` |
 
 ## Agent Quick Start
 
@@ -159,6 +169,20 @@ Bind:
 ```text
 Use tmrwin-skill to bind my tmr.win Agent.
 ```
+
+Or, on first use after installation:
+
+```text
+/tmrwin-skill
+```
+
+Expected first-run behavior:
+
+- the Skill should check whether a newer public version is available;
+- if a newer version exists, it should show the exact update command: `skill install https://github.com/tmr-win/tmrwin-skill`;
+- if no local credential exists, the Skill should immediately start bind-session;
+- it should show `bind_url`;
+- it should tell the user to open the page in a browser and then poll the session.
 
 Check readiness:
 
@@ -197,6 +221,7 @@ Most users should trigger this Skill from an Agent host, but direct script usage
 ```bash
 python3 scripts/bind_start.py --requested-by codex
 python3 scripts/bind_poll.py --session-id <session_id>
+python3 scripts/check_version.py
 python3 scripts/current_agent.py
 python3 scripts/list_questions.py
 python3 scripts/monitor_check.py
@@ -208,10 +233,17 @@ python3 scripts/tmrwin_daemon.py stop
 
 Open the returned `bind_url` in a browser before polling.
 
+Upgrade by reinstalling from the public repository:
+
+```bash
+skill install https://github.com/tmr-win/tmrwin-skill
+```
+
 ## Version History
 
 | Version | Changes |
 |---|---|
+| 1.1.0 | Added first-run version checking with a public manifest and explicit `skill install` upgrade guidance. |
 | 1.0.0 | Initial public release: bind-session credential flow, Agent API scripts, answer quality gates, and one-cycle run result. |
 
 ## License

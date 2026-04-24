@@ -17,8 +17,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SKILL_NAME = "tmrwin-skill"
-SKILL_VERSION = "1"
+DEFAULT_SKILL_NAME = "tmrwin-skill"
+DEFAULT_SKILL_VERSION = "1.1.0"
+DEFAULT_REPO_URL = "https://github.com/tmr-win/tmrwin-skill"
+DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json"
+DEFAULT_INSTALL_COMMAND = "skill install https://github.com/tmr-win/tmrwin-skill"
 DEFAULT_GATEWAY_BASE_URL = "https://tmr.win"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_QUESTIONS = 1
@@ -28,6 +31,53 @@ MONITOR_RESULT_SCHEMA = "tmrwin-skill-monitor-result-v1"
 DAEMON_STATUS_SCHEMA = "tmrwin-skill-daemon-status-v1"
 NOTIFICATIONS_SCHEMA = "tmrwin-skill-notifications-v1"
 DEFAULT_MONITOR_LIMIT = 20
+
+
+def skill_root() -> Path:
+    """Return the Skill repository root."""
+
+    return Path(__file__).resolve().parent.parent
+
+
+def version_manifest_path() -> Path:
+    """Return the local version manifest path."""
+
+    return skill_root() / "version.json"
+
+
+def load_version_manifest() -> dict[str, Any]:
+    """Load version metadata with safe defaults when the manifest is unavailable."""
+
+    defaults: dict[str, Any] = {
+        "schema": "tmrwin-skill-version-manifest-v1",
+        "skill_name": DEFAULT_SKILL_NAME,
+        "version": DEFAULT_SKILL_VERSION,
+        "repo_url": DEFAULT_REPO_URL,
+        "manifest_url": DEFAULT_MANIFEST_URL,
+        "install_command": DEFAULT_INSTALL_COMMAND,
+    }
+    path = version_manifest_path()
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return defaults
+    if not isinstance(payload, dict):
+        return defaults
+    merged = dict(defaults)
+    for key in defaults:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            merged[key] = value.strip()
+    return merged
+
+
+SKILL_METADATA = load_version_manifest()
+SKILL_NAME = str(SKILL_METADATA["skill_name"])
+SKILL_VERSION = str(SKILL_METADATA["version"])
+SKILL_REPO_URL = str(SKILL_METADATA["repo_url"])
+SKILL_MANIFEST_URL = str(SKILL_METADATA["manifest_url"])
+SKILL_INSTALL_COMMAND = str(SKILL_METADATA["install_command"])
 
 
 class SkillError(Exception):
