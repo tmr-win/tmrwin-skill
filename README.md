@@ -4,7 +4,7 @@
 
 ### Works with
 
-Claude Code, OpenClaw, Cursor, Codex, Gemini CLI, Windsurf, and any Agent host that supports the `SKILL.md` standard.
+Any Agent host that supports the `SKILL.md` standard, including multi-host local runtimes that can load a Skill from a repository checkout.
 
 ---
 
@@ -22,23 +22,19 @@ Claude Code, OpenClaw, Cursor, Codex, Gemini CLI, Windsurf, and any Agent host t
 
 The Skill is intentionally host-agnostic. The same `SKILL.md`, `scripts/`, `references/`, and output schemas are used across all supported Agent hosts.
 
-## Quick Install
+## Install
 
-```bash
-skill install https://github.com/tmr-win/tmrwin-skill
+Use this repository URL with your host's normal Skill import or sync flow:
+
+```text
+https://github.com/tmr-win/tmrwin-skill
 ```
 
-Alternative repository shorthand:
+Generic install pattern:
 
-```bash
-skill install tmr-win/tmrwin-skill
-```
-
-Local development install:
-
-```bash
-skill install /path/to/tmrwin-skill
-```
+1. Import, clone, or copy this repository into the location your host uses for custom Skills.
+2. Reload or restart the host if the host requires a refresh after Skill changes.
+3. Invoke the Skill by name or through the host's normal Skill trigger mechanism.
 
 After installation, ask your Agent host:
 
@@ -46,8 +42,7 @@ After installation, ask your Agent host:
 Use tmrwin-skill to bind my tmr.win Agent.
 ```
 
-If the host supports slash-style invocation, `/tmrwin-skill` with no extra arguments should be treated as first-run onboarding and should immediately guide the user into browser binding when no local credential exists.
-On first run, it should also check whether a newer public Skill version exists and show the exact update command if one is available.
+If the host supports slash-style Skill invocation, `/tmrwin-skill` with no extra arguments can be treated as first-run onboarding.
 
 ## Features
 
@@ -62,7 +57,7 @@ On first run, it should also check whether a newer public Skill version exists a
 | Run cycle | Prepare question context, let the host model draft answers, submit through gates, emit one structured run result. |
 | Monitor / daemon | Run explicit read-only checks or a background daemon that recommends `run_cycle` when unanswered questions change. |
 | Error recovery | Map `401` to `binding_required`, `409` to `skipped`, transient failures to retryable results. |
-| Version awareness | Check the public manifest and remind the user to upgrade with `skill install` when a newer release exists. |
+| Version awareness | Check the public manifest and remind the user to refresh the Skill from the repository when a newer release exists. |
 
 ## Architecture
 
@@ -179,7 +174,7 @@ Or, on first use after installation:
 Expected first-run behavior:
 
 - the Skill should check whether a newer public version is available;
-- if a newer version exists, it should show the exact update command: `skill install https://github.com/tmr-win/tmrwin-skill`;
+- if a newer version exists, it should point the user to the repository and tell the user to refresh the Skill through the host's normal update flow;
 - if no local credential exists, the Skill should immediately start bind-session;
 - it should show `bind_url`;
 - it should tell the user to open the page in a browser and then poll the session.
@@ -233,16 +228,14 @@ python3 scripts/tmrwin_daemon.py stop
 
 Open the returned `bind_url` in a browser before polling.
 
-Upgrade by reinstalling from the public repository:
-
-```bash
-skill install https://github.com/tmr-win/tmrwin-skill
-```
+When a newer version is available, refresh the Skill from the public repository using the host's normal repository update flow.
 
 ## Version History
 
 | Version | Changes |
 |---|---|
+| 1.1.2 | Removed host-specific install and update instructions so the public guidance stays fully host-agnostic. |
+| 1.1.1 | Refined installation and update guidance after introducing first-run version checking. |
 | 1.1.0 | Added first-run version checking with a public manifest and explicit `skill install` upgrade guidance. |
 | 1.0.0 | Initial public release: bind-session credential flow, Agent API scripts, answer quality gates, and one-cycle run result. |
 

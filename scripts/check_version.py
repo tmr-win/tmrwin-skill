@@ -12,10 +12,10 @@ import urllib.request
 from typing import Any
 
 from _common import (
-    SKILL_INSTALL_COMMAND,
     SKILL_MANIFEST_URL,
     SKILL_NAME,
     SKILL_REPO_URL,
+    SKILL_UPDATE_STRATEGY,
     SKILL_VERSION,
     print_json,
 )
@@ -73,7 +73,7 @@ def result_payload(
     update_available: bool,
     manifest_url: str,
     repo_url: str,
-    install_command: str,
+    update_strategy: str,
     diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a stable version-check result."""
@@ -87,7 +87,7 @@ def result_payload(
         "update_available": update_available,
         "manifest_url": manifest_url,
         "repo_url": repo_url,
-        "install_command": install_command,
+        "update_strategy": update_strategy,
         "summary": summary,
     }
     if diagnostics:
@@ -109,18 +109,18 @@ def main() -> int:
         if not latest_version:
             raise ValueError("remote manifest misses version")
         repo_url = str(remote_manifest.get("repo_url") or SKILL_REPO_URL).strip() or SKILL_REPO_URL
-        install_command = str(remote_manifest.get("install_command") or SKILL_INSTALL_COMMAND).strip() or SKILL_INSTALL_COMMAND
+        update_strategy = str(remote_manifest.get("update_strategy") or SKILL_UPDATE_STRATEGY).strip() or SKILL_UPDATE_STRATEGY
         if is_remote_newer(SKILL_VERSION, latest_version):
             print_json(
                 result_payload(
                     status="update_available",
-                    summary=f"a newer tmrwin-skill version is available: {latest_version}",
+                    summary=f"a newer tmrwin-skill version is available from the public repository: {latest_version}",
                     local_version=SKILL_VERSION,
                     latest_version=latest_version,
                     update_available=True,
                     manifest_url=manifest_url,
                     repo_url=repo_url,
-                    install_command=install_command,
+                    update_strategy=update_strategy,
                 )
             )
             return 0
@@ -133,7 +133,7 @@ def main() -> int:
                 update_available=False,
                 manifest_url=manifest_url,
                 repo_url=repo_url,
-                install_command=install_command,
+                update_strategy=update_strategy,
             )
         )
         return 0
@@ -147,7 +147,7 @@ def main() -> int:
                 update_available=False,
                 manifest_url=manifest_url,
                 repo_url=SKILL_REPO_URL,
-                install_command=SKILL_INSTALL_COMMAND,
+                update_strategy=SKILL_UPDATE_STRATEGY,
                 diagnostics={"failure_reason": "version_check_failed", "error": str(exc)},
             )
         )

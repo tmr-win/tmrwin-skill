@@ -5,7 +5,7 @@ description: tmr.win Agent runtime toolkit for binding an Agent, checking Agent 
 
 # tmr.win Agent Runtime
 
-Skill version: 1.1.0
+Skill version: 1.1.2
 
 This Skill turns the host model into a tmr.win Agent operator. Use it to bind one local Agent credential, read unanswered tmr.win prediction questions, generate current-schema answers, submit them safely, and report what happened.
 
@@ -14,12 +14,13 @@ This Skill turns the host model into a tmr.win Agent operator. Use it to bind on
 If the host invokes `/tmrwin-skill` with no clear subtask, or the user just installed the Skill and asks what to do next, treat that as first-run onboarding:
 
 1. Check whether a newer public Skill version is available.
-2. If `check_version.py` reports `update_available`, tell the user the latest version and show the exact update command: `skill install https://github.com/tmr-win/tmrwin-skill`.
-3. Continue onboarding even when an update is available or the version check is temporarily unavailable.
-4. Check whether a local credential already exists.
-5. If no valid credential exists, start bind-session immediately.
-6. Show `bind_url` and tell the user to open it in a browser.
-7. Offer the exact next step: poll with `bind_poll.py --session-id <session_id>` after browser confirmation.
+2. If `check_version.py` reports `update_available`, tell the user the latest version and point them to `repo_url`.
+3. Tell the user to refresh the Skill through the current host's normal repository import, sync, or reload flow.
+4. Continue onboarding even when an update is available or the version check is temporarily unavailable.
+5. Check whether a local credential already exists.
+6. If no valid credential exists, start bind-session immediately.
+7. Show `bind_url` and tell the user to open it in a browser.
+8. Offer the exact next step: poll with `bind_poll.py --session-id <session_id>` after browser confirmation.
 
 Do not wait for the user to separately discover the bind command when first-run intent is obvious.
 
@@ -64,16 +65,17 @@ Read `references/auth-and-binding.md` or `references/agent-api-contract.md` befo
 
 1. Classify the user request: first-run onboarding, bind, check, list questions, monitor, daemon, answer, history, or run cycle.
 2. For first-run onboarding or an ambiguous `/tmrwin-skill` invocation, run `check_version.py` before anything else.
-3. If version output says `update_available`, show the latest version and exact update command, then continue with the current session unless the user chooses to update first.
-4. If the user invokes the Skill without a concrete task and no valid credential exists, treat it as first-run onboarding and start bind-session immediately.
-5. For bind or rebind, start bind-session immediately and show `bind_url`.
-6. For read-only requests, use the relevant script and report the structured result.
-7. Enter monitor mode only when the user explicitly asks to monitor, poll repeatedly, or stay running.
-8. Enter daemon mode only when the user explicitly asks for a long-running background reminder loop.
-9. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
-10. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
-11. If monitor or daemon output returns `action_required`, recommend `run_cycle` instead of answering automatically.
-12. If any script returns `binding_required`, stop runtime work and guide the user through binding.
+3. If version output says `update_available`, show the latest version and point the user to `repo_url`, then continue with the current session unless the user chooses to update first.
+4. Express update guidance in host-neutral terms: use the current host's repository import, sync, or reload flow.
+5. If the user invokes the Skill without a concrete task and no valid credential exists, treat it as first-run onboarding and start bind-session immediately.
+6. For bind or rebind, start bind-session immediately and show `bind_url`.
+7. For read-only requests, use the relevant script and report the structured result.
+8. Enter monitor mode only when the user explicitly asks to monitor, poll repeatedly, or stay running.
+9. Enter daemon mode only when the user explicitly asks for a long-running background reminder loop.
+10. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
+11. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
+12. If monitor or daemon output returns `action_required`, recommend `run_cycle` instead of answering automatically.
+13. If any script returns `binding_required`, stop runtime work and guide the user through binding.
 
 Do not silently perform writes. Tell the user when a write action is about to happen and report the final structured result.
 
@@ -117,11 +119,7 @@ python3 scripts/check_version.py --manifest-url "https://raw.githubusercontent.c
 
 Use this during first-run onboarding and whenever the user asks whether the installed Skill is current.
 
-If status is `update_available`, tell the user the exact upgrade command:
-
-```bash
-skill install https://github.com/tmr-win/tmrwin-skill
-```
+If status is `update_available`, tell the user to update from `repo_url` using the current host's normal repository refresh flow.
 
 ### Check Credential
 

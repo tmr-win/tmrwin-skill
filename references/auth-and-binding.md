@@ -91,7 +91,7 @@ Stored fields:
     "identity": "https://tmr.win/identity-service",
     "intention": "https://tmr.win/intention-market"
   },
-  "skill_version": "1.1.0"
+  "skill_version": "1.1.2"
 }
 ```
 

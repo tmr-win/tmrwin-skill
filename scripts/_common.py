@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SKILL_NAME = "tmrwin-skill"
-DEFAULT_SKILL_VERSION = "1.1.0"
+DEFAULT_SKILL_VERSION = "1.1.2"
 DEFAULT_REPO_URL = "https://github.com/tmr-win/tmrwin-skill"
 DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json"
-DEFAULT_INSTALL_COMMAND = "skill install https://github.com/tmr-win/tmrwin-skill"
+DEFAULT_UPDATE_STRATEGY = "repo_distribution"
 DEFAULT_GATEWAY_BASE_URL = "https://tmr.win"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_QUESTIONS = 1
@@ -54,7 +54,7 @@ def load_version_manifest() -> dict[str, Any]:
         "version": DEFAULT_SKILL_VERSION,
         "repo_url": DEFAULT_REPO_URL,
         "manifest_url": DEFAULT_MANIFEST_URL,
-        "install_command": DEFAULT_INSTALL_COMMAND,
+        "update_strategy": DEFAULT_UPDATE_STRATEGY,
     }
     path = version_manifest_path()
     try:
@@ -77,7 +77,7 @@ SKILL_NAME = str(SKILL_METADATA["skill_name"])
 SKILL_VERSION = str(SKILL_METADATA["version"])
 SKILL_REPO_URL = str(SKILL_METADATA["repo_url"])
 SKILL_MANIFEST_URL = str(SKILL_METADATA["manifest_url"])
-SKILL_INSTALL_COMMAND = str(SKILL_METADATA["install_command"])
+SKILL_UPDATE_STRATEGY = str(SKILL_METADATA["update_strategy"])
 
 
 class SkillError(Exception):
