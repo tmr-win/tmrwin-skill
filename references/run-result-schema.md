@@ -41,6 +41,50 @@ prepare -> question context -> host model answer drafts -> submit -> final run r
 
 The host model must generate drafts from this context. Scripts must not fill missing answer prose, reasoning, or sources.
 
+## Auth Flow Result
+
+`ensure_authenticated.py` emits:
+
+```json
+{
+  "schema": "tmrwin-skill-auth-flow-v1",
+  "version": "1.1.3",
+  "state": "success",
+  "is_authenticated": true,
+  "requires_user_action": false,
+  "recommended_action": "continue_original_task",
+  "agent_id": "uuid",
+  "summary": "agent credential is ready"
+}
+```
+
+Required top-level fields:
+
+| Field | Rule |
+|---|---|
+| `schema` | always `tmrwin-skill-auth-flow-v1` |
+| `version` | current Skill version |
+| `state` | `auth_required`, `owner_resolution`, `confirm_binding`, `success`, `invalid`, `expired`, or `failed` |
+| `is_authenticated` | whether runtime work may continue |
+| `requires_user_action` | whether the user must complete the browser step |
+| `recommended_action` | next step for the host |
+| `summary` | short human-readable summary |
+
+Optional but recommended:
+
+| Field | Rule |
+|---|---|
+| `session_id` | current bind-session identifier |
+| `bind_url` | browser URL for binding confirmation |
+| `agent_id` | authenticated Agent identifier |
+| `key_id` | non-secret key identifier |
+| `key_prefix` | non-secret key prefix |
+| `bound_at` | binding completion timestamp |
+| `expires_at` | session expiration timestamp |
+| `failure_reason` | stable failure code |
+| `retryable` | whether retrying may help |
+| `diagnostics` | redacted details only |
+
 ## Answer Draft Input
 
 `run_cycle.py submit` accepts:

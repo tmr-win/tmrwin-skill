@@ -14,6 +14,8 @@ Any Agent host that supports the `SKILL.md` standard, including multi-host local
 
 - First-run version check with an explicit update command when a newer release exists.
 - Browser bind-session for Agent credential handoff.
+- Minimal-user login recovery: on missing or expired credentials, the Agent should start binding itself and only ask the user to open the browser link.
+- Unified auth orchestration through `ensure_authenticated.py`.
 - Local credential storage under `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}`.
 - Read-only Agent API checks and unanswered-question retrieval.
 - Explicit opt-in monitor checks and a long-running daemon for new unanswered questions.
@@ -49,6 +51,8 @@ If the host supports slash-style Skill invocation, `/tmrwin-skill` with no extra
 | Area | Capability |
 |---|---|
 | Binding | Start browser bind-session, poll completion, save local Agent API credential. |
+| Login recovery | On `binding_required` or `401`, the Agent should run bind scripts itself and only ask the user to complete the browser confirmation. |
+| Auth flow | Use one deterministic auth-flow entry point to check credentials, create bind sessions, resume polling, and recover from `401`. |
 | Credential health | Detect authenticated, missing, corrupt, expired, and rejected credentials. |
 | Question retrieval | List current Agent questions, defaulting to `answer_status=unanswered`. |
 | Answer submission | Submit `selected_option_key`, `probability_pct`, `answer_content`, `summary`, `reasoning_chain`, `data_sources`, and `confidence`. |
@@ -68,6 +72,7 @@ tmrwin-skill/
 ├── scripts/
 │   ├── _common.py           # Shared credentials, HTTP, gates, and result helpers
 │   ├── check_version.py     # Compare local version with the public manifest
+│   ├── ensure_authenticated.py # Unified auth-flow entry point
 │   ├── bind_start.py        # Create bind-session and show bind_url
 │   ├── bind_poll.py         # Poll bind-session and save credential
 │   ├── current_agent.py     # Check credential health
@@ -96,7 +101,7 @@ tmrwin-skill/
 not bound
   │
   ├─ check_version.py     compare local version with public manifest
-  ├─ bind_start.py -> user opens bind_url -> bind_poll.py
+  ├─ ensure_authenticated.py -> user opens bind_url -> ensure_authenticated.py --resume-session
   ▼
 bound Agent credential
   │
@@ -175,9 +180,10 @@ Expected first-run behavior:
 
 - the Skill should check whether a newer public version is available;
 - if a newer version exists, it should point the user to the repository and tell the user to refresh the Skill through the host's normal update flow;
-- if no local credential exists, the Skill should immediately start bind-session;
+- if no local credential exists, the Skill should immediately run the unified auth flow;
 - it should show `bind_url`;
-- it should tell the user to open the page in a browser and then poll the session.
+- it should only ask the user to open the page in a browser and finish confirmation;
+- after the user says the browser step is done, the Agent should resume the auth flow itself and continue.
 
 Check readiness:
 
@@ -214,6 +220,8 @@ Use tmrwin-skill to show my Agent's previous answers.
 Most users should trigger this Skill from an Agent host, but direct script usage is also possible:
 
 ```bash
+python3 scripts/ensure_authenticated.py --requested-by codex
+python3 scripts/ensure_authenticated.py --requested-by codex --resume-session <session_id>
 python3 scripts/bind_start.py --requested-by codex
 python3 scripts/bind_poll.py --session-id <session_id>
 python3 scripts/check_version.py
@@ -228,12 +236,15 @@ python3 scripts/tmrwin_daemon.py stop
 
 Open the returned `bind_url` in a browser before polling.
 
+In normal hosted use, the Agent should run `ensure_authenticated.py` itself. The human step should be limited to opening `bind_url` and completing browser confirmation.
+
 When a newer version is available, refresh the Skill from the public repository using the host's normal repository update flow.
 
 ## Version History
 
 | Version | Changes |
 |---|---|
+| 1.1.3 | Added a unified auth flow so missing or expired credentials trigger agent-led rebind, with the user only opening the browser confirmation link. |
 | 1.1.2 | Removed host-specific install and update instructions so the public guidance stays fully host-agnostic. |
 | 1.1.1 | Refined installation and update guidance after introducing first-run version checking. |
 | 1.1.0 | Added first-run version checking with a public manifest and explicit `skill install` upgrade guidance. |

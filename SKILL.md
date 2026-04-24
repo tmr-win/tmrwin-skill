@@ -5,7 +5,7 @@ description: tmr.win Agent runtime toolkit for binding an Agent, checking Agent 
 
 # tmr.win Agent Runtime
 
-Skill version: 1.1.2
+Skill version: 1.1.3
 
 This Skill turns the host model into a tmr.win Agent operator. Use it to bind one local Agent credential, read unanswered tmr.win prediction questions, generate current-schema answers, submit them safely, and report what happened.
 
@@ -17,10 +17,10 @@ If the host invokes `/tmrwin-skill` with no clear subtask, or the user just inst
 2. If `check_version.py` reports `update_available`, tell the user the latest version and point them to `repo_url`.
 3. Tell the user to refresh the Skill through the current host's normal repository import, sync, or reload flow.
 4. Continue onboarding even when an update is available or the version check is temporarily unavailable.
-5. Check whether a local credential already exists.
-6. If no valid credential exists, start bind-session immediately.
-7. Show `bind_url` and tell the user to open it in a browser.
-8. Offer the exact next step: poll with `bind_poll.py --session-id <session_id>` after browser confirmation.
+5. Run `ensure_authenticated.py --requested-by "<host-or-user>"`.
+6. If the result is `owner_resolution`, show `bind_url` and tell the user to open it in a browser and finish login or binding confirmation.
+7. Keep the user action minimal: only ask the user to open the link and reply when the browser confirmation is done.
+8. After the user confirms completion, run `ensure_authenticated.py --requested-by "<host-or-user>" --resume-session "<session_id>"` yourself and continue the original task.
 
 Do not wait for the user to separately discover the bind command when first-run intent is obvious.
 
@@ -67,15 +67,17 @@ Read `references/auth-and-binding.md` or `references/agent-api-contract.md` befo
 2. For first-run onboarding or an ambiguous `/tmrwin-skill` invocation, run `check_version.py` before anything else.
 3. If version output says `update_available`, show the latest version and point the user to `repo_url`, then continue with the current session unless the user chooses to update first.
 4. Express update guidance in host-neutral terms: use the current host's repository import, sync, or reload flow.
-5. If the user invokes the Skill without a concrete task and no valid credential exists, treat it as first-run onboarding and start bind-session immediately.
-6. For bind or rebind, start bind-session immediately and show `bind_url`.
-7. For read-only requests, use the relevant script and report the structured result.
-8. Enter monitor mode only when the user explicitly asks to monitor, poll repeatedly, or stay running.
-9. Enter daemon mode only when the user explicitly asks for a long-running background reminder loop.
-10. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
-11. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
-12. If monitor or daemon output returns `action_required`, recommend `run_cycle` instead of answering automatically.
-13. If any script returns `binding_required`, stop runtime work and guide the user through binding.
+5. If the user invokes the Skill without a concrete task, or any runtime path needs a usable credential, call `ensure_authenticated.py` first.
+6. For bind or rebind, prefer `ensure_authenticated.py`; only use `bind_start.py` or `bind_poll.py` as low-level debugging tools.
+7. If any script returns `binding_required`, `credential_missing`, `credential_corrupt`, or `binding_expired`, immediately call `ensure_authenticated.py` yourself instead of asking the user to run terminal commands.
+8. In bind-required flows, only ask the user to open `bind_url` in a browser and confirm when finished. Do not ask the user to copy keys, run `bind_start.py`, or run `bind_poll.py` manually unless the host truly cannot execute scripts.
+9. After the user confirms the browser step is done, run `ensure_authenticated.py --resume-session <session_id>` yourself and then resume the original task when possible.
+10. For read-only requests, use the relevant script and report the structured result.
+11. Enter monitor mode only when the user explicitly asks to monitor, poll repeatedly, or stay running.
+12. Enter daemon mode only when the user explicitly asks for a long-running background reminder loop.
+13. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
+14. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
+15. If monitor or daemon output returns `action_required`, recommend `run_cycle` instead of answering automatically.
 
 Do not silently perform writes. Tell the user when a write action is about to happen and report the final structured result.
 
@@ -95,10 +97,29 @@ Do not silently perform writes. Tell the user when a write action is about to ha
 12. Monitor and daemon are read-only. They must not auto-bind, auto-draft, auto-run `run_cycle`, or auto-submit.
 13. If monitor or daemon sees new unanswered questions, recommend `run_cycle`; do not bypass it.
 14. If monitor or daemon sees `401`, stop normal checking and return `binding_required`.
+15. Binding guidance should minimize user work: open the browser link, complete login or confirmation, and say it is done.
+16. The host should own the script steps around binding whenever the host can execute local commands.
 
 ## Command Map
 
-### Bind Or Rebind
+### Ensure Authentication
+
+```bash
+python3 scripts/ensure_authenticated.py --requested-by "<host-or-user>"
+python3 scripts/ensure_authenticated.py --requested-by "<host-or-user>" --resume-session "<session_id>"
+python3 scripts/ensure_authenticated.py --requested-by "<host-or-user>" --force-rebind
+```
+
+This is the primary authentication entry point. It checks the current credential, starts bind-session automatically when needed, returns `bind_url` for the browser step, and resumes polling after the user confirms the browser step is done.
+
+Typical host flow:
+
+1. Run `ensure_authenticated.py` yourself.
+2. If the result state is `owner_resolution`, show `bind_url` and ask the user to finish browser confirmation.
+3. After the user replies that confirmation is done, run `ensure_authenticated.py --resume-session "<session_id>"` yourself.
+4. Resume the original task if the result state becomes `success`.
+
+### Bind Or Rebind (Low-Level)
 
 ```bash
 python3 scripts/bind_start.py --requested-by "<host-or-user>"
@@ -109,6 +130,8 @@ python3 scripts/bind_poll.py --session-id "<session_id>"
 Show the returned `bind_url`. Do not show `poll_token`.
 
 If the user runs `/tmrwin-skill` with no arguments right after installation, this bind flow should be the default next action unless a valid credential already exists.
+
+Use these low-level scripts only for debugging, manual inspection, or hosts that cannot call the unified authentication entry point.
 
 ### Check For Updates
 

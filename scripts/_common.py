@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SKILL_NAME = "tmrwin-skill"
-DEFAULT_SKILL_VERSION = "1.1.2"
+DEFAULT_SKILL_VERSION = "1.1.3"
 DEFAULT_REPO_URL = "https://github.com/tmr-win/tmrwin-skill"
 DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json"
 DEFAULT_UPDATE_STRATEGY = "repo_distribution"
@@ -30,6 +30,7 @@ QUESTION_CONTEXT_SCHEMA = "tmrwin-skill-question-context-v1"
 MONITOR_RESULT_SCHEMA = "tmrwin-skill-monitor-result-v1"
 DAEMON_STATUS_SCHEMA = "tmrwin-skill-daemon-status-v1"
 NOTIFICATIONS_SCHEMA = "tmrwin-skill-notifications-v1"
+AUTH_FLOW_SCHEMA = "tmrwin-skill-auth-flow-v1"
 DEFAULT_MONITOR_LIMIT = 20
 
 
@@ -369,6 +370,167 @@ def save_bind_session(bind_data: dict[str, Any], base_urls: ServiceBaseUrls, *, 
     return payload
 
 
+def create_bind_session(
+    *,
+    requested_by: str,
+    skill_name: str = SKILL_NAME,
+    rebind: bool = False,
+    identity_base_url: str | None = None,
+    intention_base_url: str | None = None,
+) -> dict[str, Any]:
+    """Create a bind-session and persist the local poll handle."""
+
+    base_urls = resolve_base_urls(identity_base_url=identity_base_url, intention_base_url=intention_base_url)
+    raw = request_json(
+        "POST",
+        url_join(base_urls.identity, "/api/v1/agent-bind/sessions"),
+        payload={"requested_by": requested_by, "skill_name": skill_name},
+    )
+    data = unwrap_identity_response(raw)
+    bind_url = str(data.get("bind_url") or "").strip()
+    if not bind_url:
+        raise SkillError("invalid_response", "bind session response misses bind_url")
+    cached = save_bind_session(data, base_urls, is_rebind=rebind)
+    return {
+        "schema": "tmrwin-skill-bind-start-v1",
+        "status": data.get("status") or "pending",
+        "session_id": data.get("session_id"),
+        "bind_url": bind_url,
+        "expires_at": data.get("expires_at"),
+        "poll_handle": {
+            "session_id": data.get("session_id"),
+            "path": f"bind-sessions/{data.get('session_id')}.json",
+        },
+        "is_rebind": bool(rebind),
+        "summary": "open bind_url in browser, then poll with bind_poll.py --session-id",
+        "state_saved": bool(cached.get("poll_token")),
+    }
+
+
+def poll_bind_session(
+    *,
+    session_id: str | None = None,
+    poll_token: str | None = None,
+    identity_base_url: str | None = None,
+    intention_base_url: str | None = None,
+) -> dict[str, Any]:
+    """Poll a bind-session and persist credentials when available."""
+
+    session_data = load_bind_session(session_id) if session_id else {}
+    effective_poll_token = poll_token or session_data.get("poll_token")
+    if not effective_poll_token:
+        raise SkillError("invalid_input", "poll token or session id is required")
+    base_urls = resolve_base_urls(
+        identity_base_url=identity_base_url,
+        intention_base_url=intention_base_url,
+        credentials={"base_urls": session_data.get("base_urls", {})},
+    )
+    raw = request_json(
+        "POST",
+        url_join(base_urls.identity, "/api/v1/agent-bind/sessions/poll"),
+        payload={"poll_token": effective_poll_token},
+    )
+    data = unwrap_identity_response(raw)
+    binding_status = str(data.get("status") or "").strip()
+    bind_url = session_data.get("bind_url")
+    effective_session_id = session_id or session_data.get("session_id") or data.get("session_id")
+    if binding_status == "bound" and data.get("api_key"):
+        saved = save_credentials(data, base_urls)
+        return {
+            "schema": "tmrwin-skill-bind-poll-v1",
+            "status": "authenticated",
+            "binding_status": binding_status,
+            "session_id": effective_session_id,
+            "bind_url": bind_url,
+            "expires_at": data.get("expires_at") or session_data.get("expires_at"),
+            "credential": saved,
+            "summary": "bind completed; credential saved locally",
+        }
+    if binding_status == "consumed":
+        try:
+            credential = load_credentials()
+            return {
+                "schema": "tmrwin-skill-bind-poll-v1",
+                "status": "authenticated",
+                "binding_status": "consumed",
+                "session_id": effective_session_id,
+                "bind_url": bind_url,
+                "expires_at": session_data.get("expires_at"),
+                "credential": {
+                    "agent_id": credential.get("agent_id"),
+                    "key_id": credential.get("key_id"),
+                    "key_prefix": credential.get("key_prefix"),
+                    "bound_at": credential.get("bound_at"),
+                },
+                "summary": "bind result was already consumed; existing local credential is available",
+            }
+        except SkillError:
+            return {
+                "schema": "tmrwin-skill-bind-poll-v1",
+                "status": "binding_required",
+                "binding_status": "consumed",
+                "session_id": effective_session_id,
+                "bind_url": bind_url,
+                "expires_at": session_data.get("expires_at"),
+                "needs_rebind": True,
+                "failure_reason": "bind_session_consumed",
+                "summary": "bind result was consumed and no local credential is available",
+            }
+    if binding_status == "expired":
+        return {
+            "schema": "tmrwin-skill-bind-poll-v1",
+            "status": "binding_required",
+            "binding_status": "expired",
+            "session_id": effective_session_id,
+            "bind_url": bind_url,
+            "expires_at": data.get("expires_at") or session_data.get("expires_at"),
+            "needs_rebind": True,
+            "failure_reason": "bind_session_expired",
+            "summary": "bind session expired; create a new bind session",
+        }
+    return {
+        "schema": "tmrwin-skill-bind-poll-v1",
+        "status": "binding_required",
+        "binding_status": binding_status or "pending",
+        "session_id": effective_session_id,
+        "bind_url": bind_url,
+        "expires_at": data.get("expires_at") or session_data.get("expires_at"),
+        "needs_rebind": False,
+        "failure_reason": "bind_session_pending",
+        "summary": "bind session is not completed yet",
+    }
+
+
+def check_current_agent(
+    *,
+    identity_base_url: str | None = None,
+    intention_base_url: str | None = None,
+) -> dict[str, Any]:
+    """Check whether the current credential is accepted by the Agent API."""
+
+    credentials = load_credentials()
+    base_urls = resolve_base_urls(
+        identity_base_url=identity_base_url,
+        intention_base_url=intention_base_url,
+        credentials=credentials,
+    )
+    agent_get(
+        "/api/v1/agent/questions",
+        params={"limit": 1, "offset": 0, "answer_status": "unanswered"},
+        credentials=credentials,
+        base_urls=base_urls,
+    )
+    return {
+        "schema": "tmrwin-skill-current-agent-v1",
+        "status": "authenticated",
+        "agent_id": credentials.get("agent_id"),
+        "key_id": credentials.get("key_id"),
+        "key_prefix": credentials.get("key_prefix"),
+        "bound_at": credentials.get("bound_at"),
+        "summary": "current Agent credential is accepted",
+    }
+
+
 def url_join(base_url: str, path: str) -> str:
     """Join a service base URL and a relative path."""
 
@@ -610,6 +772,57 @@ def monitor_result(
     }
     if changed is not None:
         result["changed"] = changed
+    if diagnostics:
+        result["diagnostics"] = diagnostics
+    return result
+
+
+def auth_flow_result(
+    *,
+    state: str,
+    summary: str,
+    is_authenticated: bool,
+    requires_user_action: bool,
+    recommended_action: str,
+    session_id: str | None = None,
+    bind_url: str | None = None,
+    agent_id: str | None = None,
+    key_id: str | None = None,
+    key_prefix: str | None = None,
+    bound_at: str | None = None,
+    expires_at: str | None = None,
+    retryable: bool = False,
+    failure_reason: str | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a unified authentication flow result."""
+
+    result: dict[str, Any] = {
+        "schema": AUTH_FLOW_SCHEMA,
+        "version": SKILL_VERSION,
+        "state": state,
+        "is_authenticated": is_authenticated,
+        "requires_user_action": requires_user_action,
+        "recommended_action": recommended_action,
+        "retryable": retryable,
+        "summary": summary,
+    }
+    if session_id:
+        result["session_id"] = session_id
+    if bind_url:
+        result["bind_url"] = bind_url
+    if agent_id:
+        result["agent_id"] = agent_id
+    if key_id:
+        result["key_id"] = key_id
+    if key_prefix:
+        result["key_prefix"] = key_prefix
+    if bound_at:
+        result["bound_at"] = bound_at
+    if expires_at:
+        result["expires_at"] = expires_at
+    if failure_reason:
+        result["failure_reason"] = failure_reason
     if diagnostics:
         result["diagnostics"] = diagnostics
     return result

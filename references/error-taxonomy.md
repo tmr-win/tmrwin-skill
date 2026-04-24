@@ -39,15 +39,15 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 | `gate_data_sources_missing` | sources are absent or placeholder-like | regenerate draft |
 | `gate_confidence_out_of_range` | confidence is outside 0..1 | regenerate draft |
 | `already_submitted` | submit returned 409 or equivalent duplicate | no |
-| `binding_expired` | Agent API returned 401 | rebind |
+| `binding_expired` | Agent API returned 401 | start rebind flow and ask the user only for browser confirmation |
 | `server_rejected` | non-duplicate 4xx | no automatic retry |
 | `network_error` | timeout, connection error, 5xx | yes |
 | `invalid_response` | response body cannot be parsed safely | maybe after inspection |
-| `credential_missing` | no local credential file | rebind |
-| `credential_corrupt` | credential JSON invalid or incomplete | rebind |
-| `bind_session_pending` | bind-session not completed yet | poll after user confirms |
-| `bind_session_expired` | bind-session expired | start new bind |
-| `bind_session_consumed` | poll secret already consumed | use existing credential or rebind |
+| `credential_missing` | no local credential file | start bind flow and ask the user only for browser confirmation |
+| `credential_corrupt` | credential JSON invalid or incomplete | start bind flow and ask the user only for browser confirmation |
+| `bind_session_pending` | bind-session not completed yet | remind the user to finish browser confirmation, then poll again |
+| `bind_session_expired` | bind-session expired | start new bind flow |
+| `bind_session_consumed` | poll secret already consumed | use existing credential or start new bind flow |
 | `bind_session_failed` | bind-session returned unexpected failure | inspect and retry |
 | `monitor_state_corrupt` | saved monitor snapshot cannot be parsed; monitoring continues without baseline | yes |
 | `unknown` | fallback for unmapped failure | inspect |
@@ -64,7 +64,7 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 
 ## Monitor Rules
 
-- `401` during monitor becomes `binding_required`, and the host should stop credential-dependent checks.
+- `401` during monitor becomes `binding_required`, and the host should stop credential-dependent checks, start rebind itself, and ask the user only for the browser confirmation step.
 - `action_required` is not a failure. It means the Skill detected a changed unanswered-question set and recommends `run_cycle`.
 - A corrupt saved monitor snapshot should not block monitoring. Surface it as a redacted diagnostic warning and continue with a fresh baseline.
 

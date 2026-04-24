@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _common import add_base_url_args, agent_get, error_result, load_credentials, print_json, resolve_base_urls, SkillError
+from _common import add_base_url_args, check_current_agent, error_result, print_json, SkillError
 
 
 def main() -> int:
@@ -15,28 +15,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        credentials = load_credentials()
-        base_urls = resolve_base_urls(
-            identity_base_url=args.identity_base_url,
-            intention_base_url=args.intention_base_url,
-            credentials=credentials,
-        )
-        agent_get(
-            "/api/v1/agent/questions",
-            params={"limit": 1, "offset": 0, "answer_status": "unanswered"},
-            credentials=credentials,
-            base_urls=base_urls,
-        )
         print_json(
-            {
-                "schema": "tmrwin-skill-current-agent-v1",
-                "status": "authenticated",
-                "agent_id": credentials.get("agent_id"),
-                "key_id": credentials.get("key_id"),
-                "key_prefix": credentials.get("key_prefix"),
-                "bound_at": credentials.get("bound_at"),
-                "summary": "current Agent credential is accepted",
-            }
+            check_current_agent(
+                identity_base_url=args.identity_base_url,
+                intention_base_url=args.intention_base_url,
+            )
         )
         return 0
     except SkillError as exc:

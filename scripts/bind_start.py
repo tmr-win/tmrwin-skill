@@ -9,14 +9,10 @@ import sys
 from _common import (
     SKILL_NAME,
     add_base_url_args,
-    print_json,
-    request_json,
-    resolve_base_urls,
-    save_bind_session,
-    unwrap_identity_response,
-    url_join,
-    SkillError,
+    create_bind_session,
     error_result,
+    print_json,
+    SkillError,
 )
 
 
@@ -29,29 +25,14 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        base_urls = resolve_base_urls(identity_base_url=args.identity_base_url, intention_base_url=args.intention_base_url)
-        raw = request_json(
-            "POST",
-            url_join(base_urls.identity, "/api/v1/agent-bind/sessions"),
-            payload={"requested_by": args.requested_by, "skill_name": args.skill_name},
-        )
-        data = unwrap_identity_response(raw)
-        cached = save_bind_session(data, base_urls, is_rebind=args.rebind)
         print_json(
-            {
-                "schema": "tmrwin-skill-bind-start-v1",
-                "status": data.get("status") or "pending",
-                "session_id": data.get("session_id"),
-                "bind_url": data.get("bind_url"),
-                "expires_at": data.get("expires_at"),
-                "poll_handle": {
-                    "session_id": data.get("session_id"),
-                    "path": f"bind-sessions/{data.get('session_id')}.json",
-                },
-                "is_rebind": bool(args.rebind),
-                "summary": "open bind_url in browser, then poll with bind_poll.py --session-id",
-                "state_saved": bool(cached.get("poll_token")),
-            }
+            create_bind_session(
+                requested_by=args.requested_by,
+                skill_name=args.skill_name,
+                rebind=args.rebind,
+                identity_base_url=args.identity_base_url,
+                intention_base_url=args.intention_base_url,
+            )
         )
         return 0
     except SkillError as exc:

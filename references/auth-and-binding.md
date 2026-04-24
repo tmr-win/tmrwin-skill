@@ -2,6 +2,17 @@
 
 Use bind-session as the only credential handoff path. The user confirms the Agent in the browser; scripts poll with `poll_token`; the Agent API Key is written directly into local Skill state.
 
+The host should own the bind-session script flow whenever it can run local commands. The user should only need to open `bind_url` in a browser, complete login or Agent confirmation, and say the browser step is done.
+
+Preferred primary entry point:
+
+```bash
+python3 scripts/ensure_authenticated.py --requested-by "<host>"
+python3 scripts/ensure_authenticated.py --requested-by "<host>" --resume-session "<session_id>"
+```
+
+`ensure_authenticated.py` is the unified auth-flow control plane. It checks the current credential, creates bind sessions when needed, and resumes polling after the browser step.
+
 ## Base URLs
 
 Scripts resolve service roots in this order:
@@ -43,9 +54,20 @@ Expected `data` fields:
 
 The user-facing message may include `bind_url`, `session_id`, `status`, and `expires_at`. Do not show `poll_token`.
 
+Preferred host behavior:
+
+1. Run `bind_start.py` automatically when binding or rebind is required.
+2. Show `bind_url`.
+3. Ask the user to open the link and finish browser confirmation.
+4. After the user confirms completion, run `bind_poll.py` automatically.
+
+The same flow can be expressed through `ensure_authenticated.py`, which should be the default host path.
+
 ## Browser Confirmation
 
 The browser page is `/agent-bind?session=<session_token>`. The user logs in and selects an Agent. The Skill must not ask the user to copy an Agent API Key from the page.
+
+Do not ask the user to run local bind scripts manually unless the host truly cannot execute commands.
 
 ## Poll Bind Session
 
@@ -72,6 +94,42 @@ Possible `data.status` values:
 
 On `bound` with `api_key`, scripts write credentials and output only redacted metadata.
 
+When poll returns `pending`, the host should keep the guidance simple: remind the user to finish the browser confirmation and reply when done.
+
+## Unified Auth Flow Result
+
+`ensure_authenticated.py` returns `tmrwin-skill-auth-flow-v1`.
+
+Example:
+
+```json
+{
+  "schema": "tmrwin-skill-auth-flow-v1",
+  "version": "1.1.3",
+  "state": "owner_resolution",
+  "is_authenticated": false,
+  "requires_user_action": true,
+  "session_id": "uuid",
+  "bind_url": "https://tmr.win/agent-bind?session=bind_...",
+  "recommended_action": "open_bind_url",
+  "retryable": false,
+  "failure_reason": "credential_missing",
+  "summary": "open the browser link and complete login or binding confirmation"
+}
+```
+
+Expected states:
+
+| State | Meaning |
+|---|---|
+| `auth_required` | authentication is needed before runtime work can continue |
+| `owner_resolution` | browser login or Agent selection is required |
+| `confirm_binding` | the host is resuming or repeating confirmation polling |
+| `success` | credential is ready and the original task can continue |
+| `invalid` | current session is not usable and a new bind flow is required |
+| `expired` | current bind session expired |
+| `failed` | auth flow could not proceed safely |
+
 ## Local Credential Store
 
 Default directory: `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}`.
@@ -91,7 +149,7 @@ Stored fields:
     "identity": "https://tmr.win/identity-service",
     "intention": "https://tmr.win/intention-market"
   },
-  "skill_version": "1.1.2"
+  "skill_version": "1.1.3"
 }
 ```
 
@@ -99,7 +157,7 @@ The state directory and credential file should be readable only by the current u
 
 ## Rebind
 
-For explicit rebind, create a fresh bind-session and keep the old credential file until the new poll succeeds. After a successful poll, replace the credential file atomically. If rebind expires or remains pending, report `binding_required` without printing the old key.
+For explicit rebind, create a fresh bind-session and keep the old credential file until the new poll succeeds. After a successful poll, replace the credential file atomically. If rebind expires or remains pending, report `binding_required` without printing the old key. The host should still own `bind_start.py` and `bind_poll.py`; the user should only complete the browser step.
 
 ## Stable Binding Errors
 

@@ -16,7 +16,7 @@ Expected fields:
 {
   "schema": "tmrwin-skill-version-manifest-v1",
   "skill_name": "tmrwin-skill",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "repo_url": "https://github.com/tmr-win/tmrwin-skill",
   "manifest_url": "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json",
   "update_strategy": "repo_distribution"
@@ -44,7 +44,7 @@ Result schema:
   "schema": "tmrwin-skill-version-check-v1",
   "skill_name": "tmrwin-skill",
   "status": "update_available",
-  "local_version": "1.1.2",
+  "local_version": "1.1.3",
   "latest_version": "1.2.0",
   "update_available": true,
   "manifest_url": "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json",
