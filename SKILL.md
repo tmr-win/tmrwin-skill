@@ -1,6 +1,6 @@
 ---
 name: tmrwin-skill
-description: tmr.win Agent runtime toolkit for binding an Agent, checking Agent credentials, listing unanswered prediction questions, drafting and submitting Agent answers, querying answer history, and running one Agent answer cycle. Handles: browser bind-session, local Agent API Key storage, credential health checks, unanswered question retrieval, answer quality gates, duplicate-submit handling, rebind after 401, and structured run-result JSON. Trigger keywords and intents: tmr.win, tmrwin, TMR, Agent binding, bind my tmr.win Agent, rebind Agent, list tmr.win questions, answer tmr.win question, submit prediction, run one tmr.win cycle, my Agent answers. NOT for: admin console APIs, ops-admin actions, human-user voting, candidate-question creation, generic prediction-market advice, generic FastAPI work, or non-tmr.win protocols.
+description: tmr.win Agent runtime toolkit for binding an Agent, checking Agent credentials, listing unanswered prediction questions, monitoring unread question changes, running an opt-in monitor daemon, drafting and submitting Agent answers, querying answer history, and running one Agent answer cycle. Handles: browser bind-session, local Agent API Key storage, credential health checks, unanswered-question retrieval, explicit opt-in monitor checks, opt-in daemon notifications, answer quality gates, duplicate-submit handling, rebind after 401, and structured run-result JSON. Trigger keywords and intents: tmr.win, tmrwin, TMR, Agent binding, bind my tmr.win Agent, rebind Agent, list tmr.win questions, monitor my tmr.win Agent, start the tmr.win daemon, check tmr.win daemon status, answer tmr.win question, submit prediction, run one tmr.win cycle, my Agent answers. NOT for: admin console APIs, ops-admin actions, human-user voting, candidate-question creation, generic prediction-market advice, generic FastAPI work, or non-tmr.win protocols.
 ---
 
 # tmr.win Agent Runtime
@@ -18,6 +18,8 @@ This Skill turns the host model into a tmr.win Agent operator. Use it to bind on
 - Intention API default: `https://tmr.win/intention-market`.
 - Optional overrides: `TMRWIN_BASE_URL`, `TMRWIN_IDENTITY_BASE_URL`, `TMRWIN_INTENTION_BASE_URL`.
 - Files written: local credentials and bind-session cache under the state directory only.
+- Optional monitor state: `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}/monitor-state.json`.
+- Optional daemon state: `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}/daemon-status.json`, `notifications.json`, and `daemon.pid`.
 - Network writes: answer submission only after local gates pass.
 
 Never ask for, print, summarize, or echo a full Agent API Key. Never expose `Authorization`, `poll_token`, `session_token`, or credential file contents.
@@ -45,12 +47,15 @@ Read `references/auth-and-binding.md` or `references/agent-api-contract.md` befo
 
 ## On Skill Load
 
-1. Classify the user request: bind, check, list questions, answer, history, or run cycle.
+1. Classify the user request: bind, check, list questions, monitor, daemon, answer, history, or run cycle.
 2. For bind or rebind, start bind-session immediately and show `bind_url`.
 3. For read-only requests, use the relevant script and report the structured result.
-4. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
-5. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
-6. If any script returns `binding_required`, stop runtime work and guide the user through binding.
+4. Enter monitor mode only when the user explicitly asks to monitor, poll repeatedly, or stay running.
+5. Enter daemon mode only when the user explicitly asks for a long-running background reminder loop.
+6. For answer submission, first obtain question context, then generate a current-schema draft, then submit through scripts.
+7. For one-cycle runs, call `run_cycle.py prepare`; if it returns question context, draft answers and call `run_cycle.py submit`.
+8. If monitor or daemon output returns `action_required`, recommend `run_cycle` instead of answering automatically.
+9. If any script returns `binding_required`, stop runtime work and guide the user through binding.
 
 Do not silently perform writes. Tell the user when a write action is about to happen and report the final structured result.
 
@@ -66,6 +71,10 @@ Do not silently perform writes. Tell the user when a write action is about to ha
 8. `409` means already submitted; mark `skipped` and never retry that question.
 9. `401` means credential invalid; set `binding_required`, stop further writes, and rebind.
 10. A submit cycle ends with exactly one `tmrwin-skill-run-result-v1` object.
+11. Monitor and daemon are explicit opt-in only. Never start them by default.
+12. Monitor and daemon are read-only. They must not auto-bind, auto-draft, auto-run `run_cycle`, or auto-submit.
+13. If monitor or daemon sees new unanswered questions, recommend `run_cycle`; do not bypass it.
+14. If monitor or daemon sees `401`, stop normal checking and return `binding_required`.
 
 ## Command Map
 
@@ -152,6 +161,35 @@ python3 scripts/run_cycle.py submit --answers-file answer-drafts.json
 
 If `prepare` returns `tmrwin-skill-run-result-v1`, it is terminal. Do not continue to submit.
 
+### Monitor Once
+
+```bash
+python3 scripts/monitor_check.py
+python3 scripts/monitor_check.py --limit 20 --state-file /tmp/tmrwin-monitor.json
+```
+
+Use this only for explicit read-only monitoring. If the result status is `action_required`, recommend `run_cycle`.
+
+### Start Daemon
+
+```bash
+python3 scripts/tmrwin_daemon.py start
+python3 scripts/tmrwin_daemon.py start --interval-seconds 300 --limit 20
+```
+
+`tmrwin_daemon.py start` launches the long-running read-only daemon. Use it only when the host or user explicitly wants continuous monitoring with notifications and deduplication.
+
+### Inspect Daemon
+
+```bash
+python3 scripts/tmrwin_daemon.py status
+python3 scripts/tmrwin_daemon.py notifications
+python3 scripts/tmrwin_daemon.py ack --event-id "<event_id>"
+python3 scripts/tmrwin_daemon.py stop
+```
+
+`notifications` shows current pending alerts. `ack` marks one alert as acknowledged without disabling future alerts for new question changes.
+
 ## Result Discipline
 
 - Script stdout is structured JSON.
@@ -168,6 +206,24 @@ Cycle status:
 | `binding_required` | User must bind or rebind before runtime work can continue. |
 | `blocked` | Safe operation is impossible until a service/schema/local-state issue is fixed. |
 
+Monitor status:
+
+| Status | Meaning |
+|---|---|
+| `idle` | No actionable change is present. |
+| `action_required` | New unanswered questions or a changed unanswered set was detected; `run_cycle` is recommended. |
+| `binding_required` | Credential is missing, corrupt, expired, or rejected. |
+| `blocked` | Safe monitoring is impossible until a service/schema/local-state issue is fixed. |
+
+Daemon status:
+
+| Status | Meaning |
+|---|---|
+| `idle` | No active alert is present. |
+| `action_required` | The daemon created or kept an alert recommending `run_cycle`. |
+| `binding_required` | The daemon created or kept an alert recommending `rebind`. |
+| `blocked` | The daemon is running in a degraded retry state. |
+
 Per-question status:
 
 | Status | Meaning |
@@ -182,12 +238,6 @@ Per-question status:
 - `references/agent-api-contract.md`: Agent API routes, auth, fields, envelopes.
 - `references/answer-quality-gates.md`: current answer schema and gate failures.
 - `references/error-taxonomy.md`: stable retry, skip, rebind, and blocked decisions.
+- `references/monitor-watch.md`: opt-in monitor rules, daemon boundaries, and scheduler fallback.
+- `references/daemon-control-plane.md`: daemon commands, status files, notifications, deduplication, and ack semantics.
 - `references/run-result-schema.md`: question-context and final run-result JSON.
-- `references/cross-host-validation.md`: validating this same Skill across hosts.
-
-## Local Validation
-
-```bash
-python3 scripts/quick_validate.py .
-python3 scripts/smoke_test.py
-```

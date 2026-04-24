@@ -24,6 +24,10 @@ DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_QUESTIONS = 1
 RUN_RESULT_SCHEMA = "tmrwin-skill-run-result-v1"
 QUESTION_CONTEXT_SCHEMA = "tmrwin-skill-question-context-v1"
+MONITOR_RESULT_SCHEMA = "tmrwin-skill-monitor-result-v1"
+DAEMON_STATUS_SCHEMA = "tmrwin-skill-daemon-status-v1"
+NOTIFICATIONS_SCHEMA = "tmrwin-skill-notifications-v1"
+DEFAULT_MONITOR_LIMIT = 20
 
 
 class SkillError(Exception):
@@ -134,6 +138,30 @@ def bind_sessions_dir() -> Path:
     """Return the bind-session cache directory."""
 
     return state_dir() / "bind-sessions"
+
+
+def monitor_state_path() -> Path:
+    """Return the local monitor state file path."""
+
+    return state_dir() / "monitor-state.json"
+
+
+def daemon_pid_path() -> Path:
+    """Return the local daemon pid file path."""
+
+    return state_dir() / "daemon.pid"
+
+
+def daemon_status_path() -> Path:
+    """Return the local daemon status file path."""
+
+    return state_dir() / "daemon-status.json"
+
+
+def notifications_path() -> Path:
+    """Return the local daemon notifications file path."""
+
+    return state_dir() / "notifications.json"
 
 
 def ensure_private_dir(path: Path) -> None:
@@ -439,6 +467,24 @@ def agent_post(
     return request_json("POST", url_join(urls.intention, path), payload=payload, headers=bearer_headers(creds), timeout=timeout)
 
 
+def fetch_unanswered_questions(
+    *,
+    limit: int = DEFAULT_MONITOR_LIMIT,
+    credentials: dict[str, Any] | None = None,
+    base_urls: ServiceBaseUrls | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch and normalize unanswered questions for the current Agent."""
+
+    raw = agent_get(
+        "/api/v1/agent/questions",
+        params={"limit": limit, "offset": 0, "answer_status": "unanswered"},
+        credentials=credentials,
+        base_urls=base_urls,
+    )
+    items = raw.get("items", []) if isinstance(raw, dict) else []
+    return [normalize_question(item) for item in items if isinstance(item, dict)]
+
+
 def normalize_question(item: dict[str, Any]) -> dict[str, Any]:
     """Normalize question context fields."""
 
@@ -485,6 +531,40 @@ def run_result(
     return result
 
 
+def monitor_result(
+    *,
+    status: str,
+    summary: str,
+    checked_at: str | None = None,
+    question_ids: list[str] | None = None,
+    unanswered_count: int | None = None,
+    changed: bool | None = None,
+    recommended_action: str | None = None,
+    needs_rebind: bool = False,
+    retryable: bool = False,
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a monitor result payload."""
+
+    result: dict[str, Any] = {
+        "schema": MONITOR_RESULT_SCHEMA,
+        "version": SKILL_VERSION,
+        "status": status,
+        "summary": summary,
+        "checked_at": checked_at or utc_now_iso(),
+        "question_ids": question_ids or [],
+        "unanswered_count": unanswered_count if unanswered_count is not None else len(question_ids or []),
+        "recommended_action": recommended_action,
+        "needs_rebind": needs_rebind,
+        "retryable": retryable,
+    }
+    if changed is not None:
+        result["changed"] = changed
+    if diagnostics:
+        result["diagnostics"] = diagnostics
+    return result
+
+
 def error_result(exc: SkillError) -> dict[str, Any]:
     """Convert SkillError into a final run result."""
 
@@ -501,6 +581,28 @@ def error_result(exc: SkillError) -> dict[str, Any]:
         status="blocked",
         summary=exc.message,
         items=[],
+        retryable=exc.retryable,
+        diagnostics={"failure_reason": exc.code, "http_status": exc.http_status, **exc.details},
+    )
+
+
+def monitor_error_result(exc: SkillError, *, checked_at: str | None = None) -> dict[str, Any]:
+    """Convert SkillError into a monitor result."""
+
+    if exc.status == "binding_required" or exc.code in {"credential_missing", "credential_corrupt", "binding_expired"}:
+        return monitor_result(
+            status="binding_required",
+            summary=exc.message,
+            checked_at=checked_at,
+            recommended_action="rebind",
+            needs_rebind=True,
+            retryable=False,
+            diagnostics={"failure_reason": exc.code, "http_status": exc.http_status},
+        )
+    return monitor_result(
+        status="blocked",
+        summary=exc.message,
+        checked_at=checked_at,
         retryable=exc.retryable,
         diagnostics={"failure_reason": exc.code, "http_status": exc.http_status, **exc.details},
     )
@@ -687,3 +789,45 @@ def max_questions_from_args(value: int | None) -> int:
     if value is None:
         return default_limit
     return max(1, min(int(value), default_limit if raw_default else int(value)))
+
+
+def monitor_limit_from_args(value: int | None) -> int:
+    """Resolve the per-check monitor limit."""
+
+    if value is None:
+        return DEFAULT_MONITOR_LIMIT
+    return max(1, int(value))
+
+
+def build_question_snapshot(questions: list[dict[str, Any]], *, checked_at: str | None = None) -> dict[str, Any]:
+    """Build a redacted snapshot for monitor change detection."""
+
+    question_ids = [str(item.get("question_id") or "").strip() for item in questions if str(item.get("question_id") or "").strip()]
+    return {
+        "checked_at": checked_at or utc_now_iso(),
+        "unanswered_count": len(question_ids),
+        "question_ids": question_ids,
+    }
+
+
+def load_optional_snapshot(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """Load a snapshot file if present; return a warning instead of failing on corruption."""
+
+    if not path.exists():
+        return None, None
+    try:
+        payload = read_json_file(path, missing_code="monitor_state_missing")
+    except SkillError:
+        return None, "monitor_state_corrupt"
+    return payload, None
+
+
+def snapshots_changed(previous: dict[str, Any] | None, current: dict[str, Any]) -> bool:
+    """Return whether the current snapshot differs from the previous snapshot."""
+
+    if previous is None:
+        return bool(current.get("question_ids")) or int(current.get("unanswered_count", 0)) > 0
+    return (
+        int(previous.get("unanswered_count", -1)) != int(current.get("unanswered_count", -2))
+        or list(previous.get("question_ids", [])) != list(current.get("question_ids", []))
+    )

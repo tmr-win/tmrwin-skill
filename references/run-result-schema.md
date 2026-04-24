@@ -110,6 +110,120 @@ Optional but recommended:
 | `retryable` | true for network/server transient failures |
 | `diagnostics` | redacted details only |
 
+## Monitor Result
+
+`monitor_check.py` emits a dedicated monitor schema:
+
+```json
+{
+  "schema": "tmrwin-skill-monitor-result-v1",
+  "version": "1",
+  "status": "action_required",
+  "summary": "2 unanswered question(s); run_cycle recommended",
+  "checked_at": "2026-04-24T03:00:00+00:00",
+  "question_ids": ["uuid-1", "uuid-2"],
+  "unanswered_count": 2,
+  "changed": true,
+  "recommended_action": "run_cycle",
+  "needs_rebind": false,
+  "retryable": false
+}
+```
+
+Required top-level fields:
+
+| Field | Rule |
+|---|---|
+| `schema` | always `tmrwin-skill-monitor-result-v1` |
+| `version` | always `"1"` |
+| `status` | `idle`, `action_required`, `binding_required`, or `blocked` |
+| `summary` | short human-readable summary |
+| `checked_at` | UTC timestamp for the last completed check |
+| `question_ids` | current unanswered question IDs after normalization |
+| `unanswered_count` | current unanswered question count |
+
+Optional but recommended:
+
+| Field | Rule |
+|---|---|
+| `changed` | whether the unanswered-question snapshot changed since the last saved state |
+| `recommended_action` | typically `run_cycle` or `rebind` |
+| `needs_rebind` | true on missing credential or 401 |
+| `retryable` | true for network/server transient failures |
+| `diagnostics` | redacted details only |
+## Daemon Status
+
+`tmrwin_daemon.py status` emits:
+
+```json
+{
+  "schema": "tmrwin-skill-daemon-status-v1",
+  "version": "1",
+  "running": true,
+  "pid": 12345,
+  "started_at": "2026-04-24T03:00:00+00:00",
+  "last_check_at": "2026-04-24T03:05:00+00:00",
+  "last_status": "action_required",
+  "last_summary": "2 unanswered question(s); run_cycle recommended",
+  "interval_seconds": 300,
+  "backoff_seconds": 300,
+  "active_alert": {
+    "event_id": "evt_1234",
+    "kind": "new_unanswered_questions",
+    "status": "pending",
+    "summary": "2 unanswered question(s); run_cycle recommended",
+    "recommended_action": "run_cycle"
+  }
+}
+```
+
+Required fields:
+
+| Field | Rule |
+|---|---|
+| `schema` | always `tmrwin-skill-daemon-status-v1` |
+| `version` | always `"1"` |
+| `running` | whether the daemon is currently alive |
+| `pid` | current pid or `null` |
+| `started_at` | UTC timestamp when the current daemon instance started |
+| `last_check_at` | UTC timestamp for the most recent completed monitor iteration |
+| `last_status` | `idle`, `action_required`, `binding_required`, or `blocked` |
+| `last_summary` | short human-readable summary |
+| `interval_seconds` | configured normal interval |
+| `backoff_seconds` | next sleep duration after degradation rules are applied |
+
+## Notifications Collection
+
+`tmrwin_daemon.py notifications` emits:
+
+```json
+{
+  "schema": "tmrwin-skill-notifications-v1",
+  "version": "1",
+  "items": [
+    {
+      "event_id": "evt_1234",
+      "alert_key": "sha256",
+      "kind": "new_unanswered_questions",
+      "created_at": "2026-04-24T03:05:00+00:00",
+      "status": "pending",
+      "summary": "2 unanswered question(s); run_cycle recommended",
+      "question_ids": ["uuid-1", "uuid-2"],
+      "recommended_action": "run_cycle",
+      "monitor_status": "action_required"
+    }
+  ]
+}
+```
+
+Collection fields:
+
+| Field | Rule |
+|---|---|
+| `schema` | always `tmrwin-skill-notifications-v1` |
+| `version` | always `"1"` |
+| `items` | array of daemon notification events |
+
 ## Terminal Prepare Results
 
 No credential:
@@ -138,6 +252,58 @@ No unanswered questions:
   "counts": {"answered": 0, "skipped": 0, "failed": 0},
   "needs_rebind": false,
   "retryable": false
+}
+```
+
+No actionable monitor change:
+
+```json
+{
+  "schema": "tmrwin-skill-monitor-result-v1",
+  "version": "1",
+  "status": "idle",
+  "summary": "unanswered questions unchanged since last monitor check",
+  "checked_at": "2026-04-24T03:00:00+00:00",
+  "question_ids": ["uuid"],
+  "unanswered_count": 1,
+  "changed": false,
+  "recommended_action": null,
+  "needs_rebind": false,
+  "retryable": false
+}
+```
+
+Monitor requires rebind:
+
+```json
+{
+  "schema": "tmrwin-skill-monitor-result-v1",
+  "version": "1",
+  "status": "binding_required",
+  "summary": "credential missing; bind tmr.win Agent",
+  "checked_at": "2026-04-24T03:00:00+00:00",
+  "question_ids": [],
+  "unanswered_count": 0,
+  "recommended_action": "rebind",
+  "needs_rebind": true,
+  "retryable": false
+}
+```
+
+Daemon not started:
+
+```json
+{
+  "schema": "tmrwin-skill-daemon-status-v1",
+  "version": "1",
+  "running": false,
+  "pid": null,
+  "started_at": null,
+  "last_check_at": null,
+  "last_status": "idle",
+  "last_summary": "daemon not started",
+  "interval_seconds": 300,
+  "backoff_seconds": 300
 }
 ```
 

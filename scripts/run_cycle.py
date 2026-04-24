@@ -9,11 +9,10 @@ import sys
 from _common import (
     QUESTION_CONTEXT_SCHEMA,
     add_base_url_args,
-    agent_get,
     error_result,
+    fetch_unanswered_questions,
     load_credentials,
     max_questions_from_args,
-    normalize_question,
     print_json,
     read_json_input,
     resolve_base_urls,
@@ -43,14 +42,11 @@ def prepare(args: argparse.Namespace) -> int:
             credentials=credentials,
         )
         limit = max_questions_from_args(args.max_questions)
-        raw = agent_get(
-            "/api/v1/agent/questions",
-            params={"limit": limit, "offset": 0, "answer_status": "unanswered"},
+        questions = fetch_unanswered_questions(
+            limit=limit,
             credentials=credentials,
             base_urls=base_urls,
         )
-        items = raw.get("items", []) if isinstance(raw, dict) else []
-        questions = [normalize_question(item) for item in items if isinstance(item, dict)]
         if not questions:
             print_json(
                 run_result(
