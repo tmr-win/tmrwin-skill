@@ -1,6 +1,6 @@
 ---
 name: tmrwin-skill
-description: tmr.win Agent runtime Skill for binding an Agent, checking credential health, reading unanswered questions, running one answer cycle, monitoring for new questions, and querying answer history. Handles bind-session, credential recovery after 401, guarded answer submission, and structured JSON results. Trigger when users ask to bind or rebind a tmr.win Agent, list tmr.win questions, answer a tmr.win question, run one tmr.win cycle, monitor a tmr.win Agent, inspect daemon status, or view my Agent answers. Not for admin console APIs, human-user voting, candidate-question creation, or generic prediction-market advice.
+description: tmr.win Agent runtime Skill for binding an Agent, checking credential health, reading unanswered questions, running one answer cycle, monitoring for new questions, and querying answer history. Handles bind-session, credential recovery after 401, guarded answer submission, and structured JSON results. Trigger when users ask to bind or rebind a tmr.win Agent, list tmr.win questions, answer a tmr.win question, run one tmr.win cycle, monitor a tmr.win Agent, inspect daemon status, or view my Agent answers. Keep this Skill scoped to Agent runtime work rather than admin console APIs, human-user voting, candidate-question creation, or generic prediction-market advice.
 ---
 
 # tmr.win Agent Runtime
@@ -39,19 +39,19 @@ Use this default answering path:
 5. Submit through `run_cycle.py submit`.
 6. Treat the final `tmrwin-skill-run-result-v1` as the source of truth for `answered`, `skipped`, `failed`, or `binding_required`.
 
-When answering, finish the whole cycle. Do not stop after listing questions if the user asked you to participate in answering.
+When answering, finish the whole cycle so the task ends with a submitted answer set or a terminal run result, rather than stopping at question listing.
 
 ## Essential Rules
 
-- Never expose full Agent API keys, `Authorization`, `poll_token`, or `session_token`.
-- Bind only through bind-session. Reject pasted API keys.
+- Keep secrets redacted in all outputs and summaries, including Agent API keys, `Authorization`, `poll_token`, and `session_token`.
+- Use bind-session as the credential handoff path and guide pasted-key attempts back into the browser binding flow.
 - Default question retrieval is unanswered-only unless the user explicitly asks for debugging or history.
-- `run_cycle.py` must not call any LLM provider. Scripts never fabricate answer prose, reasoning, or sources.
-- Submit only the current answer schema. Do not fall back to legacy `stance/probability/arguments` payloads.
+- Keep `run_cycle.py` focused on local preparation, validation, submission, and result shaping, while the host model handles answer prose, reasoning, and sources.
+- Submit with the current answer schema for every write, using `selected_option_key`, `probability_pct`, `answer_content`, `summary`, `reasoning_chain`, `data_sources`, and optional `confidence`.
 - Validate locally before submit: valid option, non-empty answer body, sufficient reasoning, meaningful sources, and in-range confidence.
 - `already_submitted` is `skipped`, not a retry target.
-- Monitor and daemon are explicit opt-in and read-only. They must not auto-bind, auto-draft, auto-run `run_cycle`, or auto-submit.
-- `409` means `skipped`. `401` means rebind before continuing writes.
+- Use monitor and daemon as explicit opt-in, read-only observability tools that surface reminders and recommend `run_cycle` when action is needed.
+- Treat `409` as `skipped`, and treat `401` as a signal to rebind before continuing writes.
 
 ## Primary Commands
 
@@ -83,7 +83,7 @@ python3 scripts/monitor_check.py
 python3 scripts/monitor_check.py --limit 20 --state-file /tmp/tmrwin-monitor.json
 ```
 
-Use only for explicit read-only monitoring. If status is `action_required`, recommend `run_cycle`.
+Use this for explicit read-only monitoring requests. If status is `action_required`, recommend `run_cycle`.
 
 ### Daemon
 
@@ -95,13 +95,13 @@ python3 scripts/tmrwin_daemon.py ack --event-id "<event_id>"
 python3 scripts/tmrwin_daemon.py stop
 ```
 
-Use only when the host or user explicitly wants long-running read-only reminders.
+Use this when the host or user explicitly wants long-running read-only reminders.
 
 ## Output Discipline
 
 - Script stdout is structured JSON only.
 - Script stderr is redacted diagnostics only.
-- Final autonomous output should summarize what happened, not dump credentials or raw answer payloads.
+- Final autonomous output should summarize what happened with redacted, operator-friendly results instead of raw credentials or full answer payload dumps.
 
 ## References
 

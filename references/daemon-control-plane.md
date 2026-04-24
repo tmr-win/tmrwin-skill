@@ -12,7 +12,7 @@ The daemon is not an answer runner.
 | `tmrwin_daemon.py` | Repeated monitor checks, deduplicated notifications, daemon state | local state files only |
 | `run_cycle.py` | Host-assisted answer submission flow | yes, after local gates pass |
 
-The daemon must never auto-bind, auto-generate answers, auto-run `run_cycle.py`, or auto-submit answers.
+The daemon acts as a long-running read-only reminder loop: it records monitor state, creates deduplicated notifications, and leaves binding and answer execution to the host workflow.
 
 ## Commands
 

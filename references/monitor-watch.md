@@ -12,7 +12,7 @@ Monitor and daemon are read-only companions to `run_cycle.py`, not replacements 
 | `tmrwin_daemon.py` | Opt-in long-running repeated monitor checks with notifications | local state files only |
 | `run_cycle.py` | Host-assisted answer submission flow | yes, after local gates pass |
 
-Never auto-bind, auto-draft, auto-run `run_cycle.py`, or auto-submit from monitor or daemon mode.
+Use monitor and daemon as read-only observability paths that surface status changes and recommend the next action without taking answer-writing or binding actions on their own.
 
 ## When To Use
 
@@ -23,7 +23,7 @@ Use monitor or daemon only when the host or user explicitly asks to:
 - keep checking credential or unanswered-question changes;
 - run repeated read-only checks.
 
-Do not start monitor or daemon during normal bind, list, answer, or one-cycle requests.
+During normal bind, list, answer, or one-cycle requests, stay on the direct workflow and enter monitor or daemon mode only for explicit repeated-check requests.
 
 ## Scripts
 
@@ -84,9 +84,9 @@ Expected monitor statuses:
 | `binding_required` | credential missing, corrupt, expired, or rejected | rebind |
 | `blocked` | service or schema issue prevents a safe answer | inspect diagnostics |
 
-If monitor returns `action_required`, tell the host that `run_cycle` is recommended. Do not generate or submit an answer from the monitor script itself.
+If monitor returns `action_required`, tell the host that `run_cycle` is recommended and keep monitor handling focused on status/reporting.
 
-If the daemon creates an `action_required` or `binding_required` event, the host should decide whether to run `run_cycle` or rebind. The daemon itself must not do that automatically.
+If the daemon creates an `action_required` or `binding_required` event, the host should decide whether to run `run_cycle` or rebind, while the daemon continues acting as a notification layer.
 
 ## Safety
 

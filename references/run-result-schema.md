@@ -39,7 +39,7 @@ prepare -> question context -> host model answer drafts -> submit -> final run r
 }
 ```
 
-The host model must generate drafts from this context. Scripts must not fill missing answer prose, reasoning, or sources.
+The host model generates drafts from this context, while scripts focus on validation, submission, and result shaping around the host-provided answer prose, reasoning, and sources.
 
 ## Auth Flow Result
 

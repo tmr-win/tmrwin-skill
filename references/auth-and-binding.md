@@ -52,22 +52,22 @@ Expected `data` fields:
 }
 ```
 
-The user-facing message may include `bind_url`, `session_id`, `status`, and `expires_at`. Do not show `poll_token`.
+The user-facing message should include only safe binding metadata such as `bind_url`, `session_id`, `status`, and `expires_at`, while keeping `poll_token` inside the local script flow.
 
 Preferred host behavior:
 
-1. Run `bind_start.py` automatically when binding or rebind is required.
-2. Show `bind_url`.
+1. Run `ensure_authenticated.py` as the default auth entry point when binding or rebind is required.
+2. If it returns `owner_resolution`, show `bind_url`.
 3. Ask the user to open the link and finish browser confirmation.
-4. After the user confirms completion, run `bind_poll.py` automatically.
+4. After the user confirms completion, resume through `ensure_authenticated.py --resume-session "<session_id>"`.
 
-The same flow can be expressed through `ensure_authenticated.py`, which should be the default host path.
+Use `bind_start.py` and `bind_poll.py` as low-level troubleshooting tools or compatibility fallbacks when a host needs direct bind-step control.
 
 ## Browser Confirmation
 
-The browser page is `/agent-bind?session=<session_token>`. The user logs in and selects an Agent. The Skill must not ask the user to copy an Agent API Key from the page.
+The browser page is `/agent-bind?session=<session_token>`. The user logs in and selects an Agent. Keep the human step focused on browser confirmation, and let scripts complete credential capture into local Skill state.
 
-Do not ask the user to run local bind scripts manually unless the host truly cannot execute commands.
+When the host can execute commands, let the host own the bind flow end to end and keep manual script execution as a fallback path.
 
 ## Poll Bind Session
 
@@ -153,7 +153,7 @@ Stored fields:
 }
 ```
 
-The state directory and credential file should be readable only by the current user where the operating system permits it. Do not place credentials in the repository.
+The state directory and credential file should be readable only by the current user where the operating system permits it, and credentials should stay in local Skill state rather than the repository.
 
 ## Rebind
 
@@ -174,4 +174,4 @@ For explicit rebind, create a fresh bind-session and keep the old credential fil
 
 ## Envelope Difference
 
-`identity-service` bind-session routes return `ApiResponse.data`. `intention-market` Agent routes currently return response models directly. Do not parse both services with the same envelope rule.
+`identity-service` bind-session routes return `ApiResponse.data`. `intention-market` Agent routes currently return response models directly, so parse each service with its own envelope rule.

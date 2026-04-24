@@ -64,10 +64,10 @@ Result schema:
 
 ## First-Run Rule
 
-When the user invokes `/tmrwin-skill` without a clear task, hosts should:
+When the user directly invokes the installed `tmrwin-skill` without a clear task, hosts should:
 
 1. Run `check_version.py`.
 2. If `status=update_available`, show the latest version, `repo_url`, and tell the user to refresh the Skill through the host's normal update flow.
 3. Continue credential checks and browser bind guidance even if the version check fails or an update exists.
 
-Version checks are advisory. They must not auto-upgrade, auto-bind, or block runtime use when GitHub is temporarily unavailable.
+Version checks are advisory. Use them to inform the user about available updates, then continue normal runtime onboarding unless the user chooses to update first or the host cannot reach GitHub temporarily.
