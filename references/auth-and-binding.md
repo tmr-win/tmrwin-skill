@@ -13,6 +13,8 @@ python3 scripts/ensure_authenticated.py --requested-by "<host>" --resume-session
 
 `ensure_authenticated.py` is the unified auth-flow control plane. It checks the current credential, creates bind sessions when needed, and resumes polling after the browser step.
 
+Even when the host resumes with `--resume-session`, the script should treat the current local credential as the source of truth first. If the current credential is already accepted by the Agent API, return `success` and ignore the stale bind-session instead of reporting that the session expired.
+
 ## Base URLs
 
 Scripts resolve service roots in this order:
@@ -60,6 +62,8 @@ Preferred host behavior:
 2. If it returns `owner_resolution`, show `bind_url`.
 3. Ask the user to open the link and finish browser confirmation.
 4. After the user confirms completion, resume through `ensure_authenticated.py --resume-session "<session_id>"`.
+
+If the resumed bind-session has expired but the local credential is still valid, the host should continue with the existing credential rather than forcing a new bind.
 
 Use `bind_start.py` and `bind_poll.py` as low-level troubleshooting tools or compatibility fallbacks when a host needs direct bind-step control.
 

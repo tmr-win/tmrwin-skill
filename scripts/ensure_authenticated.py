@@ -78,6 +78,24 @@ def auth_required_result(*, failure_reason: str, summary: str) -> tuple[dict[str
     )
 
 
+def is_credential_recovery_error(exc: SkillError) -> bool:
+    """Return whether the error should trigger bind or rebind handling."""
+
+    return exc.code in {"credential_missing", "credential_corrupt", "binding_expired"} or exc.status == "binding_required"
+
+
+def check_current_credential(args: argparse.Namespace) -> dict[str, object]:
+    """Return the auth-flow success payload for the current credential."""
+
+    payload = success_from_current_agent(
+        check_current_agent(
+            identity_base_url=args.identity_base_url,
+            intention_base_url=args.intention_base_url,
+        )
+    )
+    return payload
+
+
 def resume_existing_session(args: argparse.Namespace) -> tuple[dict[str, object], int]:
     """Resume a previously created bind-session."""
 
@@ -179,20 +197,17 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        if args.resume_session:
-            payload, exit_code = resume_existing_session(args)
-            print_json(payload)
-            return exit_code
-
         if not args.force_rebind:
             try:
-                print_json(success_from_current_agent(check_current_agent(
-                    identity_base_url=args.identity_base_url,
-                    intention_base_url=args.intention_base_url,
-                )))
+                payload = check_current_credential(args)
+                print_json(payload)
                 return 0
             except SkillError as exc:
-                if exc.code not in {"credential_missing", "credential_corrupt", "binding_expired"} and exc.status != "binding_required":
+                if args.resume_session and is_credential_recovery_error(exc):
+                    payload, exit_code = resume_existing_session(args)
+                    print_json(payload)
+                    return exit_code
+                if not is_credential_recovery_error(exc):
                     payload, exit_code = failed_from_error(exc)
                     print_json(payload)
                     return exit_code
