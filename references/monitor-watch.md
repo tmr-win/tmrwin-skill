@@ -4,13 +4,13 @@
 
 ## Boundary
 
-Monitor and daemon are read-only companions to `run_cycle.py`, not replacements for it.
+Monitor and daemon are read-only companions to `answer_round.py`, not replacements for it.
 
 | Capability | Purpose | Writes allowed |
 |---|---|---|
 | `monitor_check.py` | One read-only status check | none |
 | `tmrwin_daemon.py` | Opt-in long-running repeated monitor checks with notifications | local state files only |
-| `run_cycle.py` | Host-assisted answer submission flow | yes, after local gates pass |
+| `answer_round.py` | Host-assisted answer submission flow | yes, after local gates pass |
 
 Use monitor and daemon as read-only observability paths that surface status changes and recommend the next action without taking answer-writing or binding actions on their own.
 
@@ -23,7 +23,7 @@ Use monitor or daemon only when the host or user explicitly asks to:
 - keep checking credential or unanswered-question changes;
 - run repeated read-only checks.
 
-During normal bind, list, answer, or one-cycle requests, stay on the direct workflow and enter monitor or daemon mode only for explicit repeated-check requests.
+During normal bind, list, answer, or answer-round requests, stay on the direct workflow and enter monitor or daemon mode only for explicit repeated-check requests.
 
 ## Scripts
 
@@ -80,13 +80,13 @@ Expected monitor statuses:
 | Status | Meaning | Recommended host action |
 |---|---|---|
 | `idle` | no new actionable state | wait or check again later |
-| `action_required` | unanswered-question set changed and needs attention | run `run_cycle.py` |
+| `action_required` | unanswered-question set changed and needs attention | run `answer_round.py` |
 | `binding_required` | credential missing, corrupt, expired, or rejected | rebind |
 | `blocked` | service or schema issue prevents a safe answer | inspect diagnostics |
 
-If monitor returns `action_required`, tell the host that `run_cycle` is recommended and keep monitor handling focused on status/reporting.
+If monitor returns `action_required`, tell the host that `answer_round` is recommended and keep monitor handling focused on status/reporting.
 
-If the daemon creates an `action_required` or `binding_required` event, the host should decide whether to run `run_cycle` or rebind, while the daemon continues acting as a notification layer.
+If the daemon creates an `action_required` or `binding_required` event, the host should decide whether to run `answer_round` or rebind, while the daemon continues acting as a notification layer.
 
 ## Safety
 

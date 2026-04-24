@@ -1,14 +1,14 @@
 # Run Result Schema
 
-`run_cycle.py` has two explicit phases because scripts do not generate answer content.
+`answer_round.py` has two explicit phases because scripts do not generate answer content.
 
 ```text
-prepare -> question context -> host model answer drafts -> submit -> final run result
+prepare -> question context -> host model answer drafts -> preflight -> submit -> final run result
 ```
 
 ## Question Context
 
-`run_cycle.py prepare` emits either a final `tmrwin-skill-run-result-v1` for terminal states or a question-context object:
+`answer_round.py prepare` emits either a final `tmrwin-skill-run-result-v1` for terminal states or a question-context object:
 
 ```json
 {
@@ -29,12 +29,30 @@ prepare -> question context -> host model answer drafts -> submit -> final run r
   ],
   "answer_schema": {
     "selected_option_key": "string",
-    "probability_pct": "integer 51..99",
+    "probability_pct": "integer 55..99",
     "answer_content": "string",
     "summary": "string|null",
     "reasoning_chain": "string[]",
     "data_sources": "string[]",
     "confidence": "number 0..1|null"
+  },
+  "answer_contract": {
+    "required_fields": ["selected_option_key", "probability_pct", "answer_content", "summary", "reasoning_chain", "data_sources"],
+    "optional_fields": ["confidence"],
+    "probability_pct_range": [55, 99]
+  },
+  "preflight_contract": {
+    "summary_min_chars": 12,
+    "answer_content_min_chars": 200,
+    "answer_content_min_chars_operator": ">",
+    "reasoning_chain": {
+      "min_steps": 2,
+      "min_total_chars": 160
+    },
+    "data_sources": {
+      "min_items": 2,
+      "require_specific_source": true
+    }
   }
 }
 ```
@@ -85,9 +103,9 @@ Optional but recommended:
 | `retryable` | whether retrying may help |
 | `diagnostics` | redacted details only |
 
-## Answer Draft Input
+## Preflight Draft Input
 
-`run_cycle.py submit` accepts:
+`answer_round.py preflight` accepts:
 
 ```json
 {
@@ -111,16 +129,130 @@ Optional but recommended:
 }
 ```
 
+`answer_round.py preflight` returns a dedicated preflight result whose `items[]` contain `ready` or `failed` outcomes.
+
+## Submit Input
+
+`answer_round.py submit` accepts the full preflight result object or an equivalent JSON array containing only `ready` items.
+
+Preflight-result example:
+
+```json
+{
+  "schema": "tmrwin-skill-preflight-result-v1",
+  "status": "answered",
+  "items": [
+    {
+      "question_id": "uuid",
+      "status": "ready",
+      "question": {
+        "question_id": "uuid",
+        "options": {"yes": "Yes", "no": "No"}
+      },
+      "answer": {
+        "selected_option_key": "yes",
+        "probability_pct": 72,
+        "answer_content": "Answer prose.",
+        "summary": "Short conclusion.",
+        "reasoning_chain": ["Step 1", "Step 2"],
+        "data_sources": ["https://example.com/source", "Named report"],
+        "confidence": 0.72
+      },
+      "rewrite_hints": []
+    }
+  ]
+}
+```
+
+Equivalent ready-items example:
+
+```json
+[
+  {
+    "question_id": "uuid",
+    "status": "ready",
+    "question": {
+      "question_id": "uuid",
+      "options": {"yes": "Yes", "no": "No"}
+    },
+    "answer": {
+      "selected_option_key": "yes",
+      "probability_pct": 72,
+      "answer_content": "Answer prose.",
+      "summary": "Short conclusion.",
+      "reasoning_chain": ["Step 1", "Step 2"],
+      "data_sources": ["https://example.com/source", "Named report"],
+      "confidence": 0.72
+    },
+    "rewrite_hints": []
+  }
+]
+```
+
+Raw drafts are not valid `submit` input. If `submit` receives items that are not marked `ready`, it returns `failed` items with `failure_reason=preflight_required`.
+
+## Preflight Result
+
+`answer_round.py preflight` emits:
+
+```json
+{
+  "schema": "tmrwin-skill-preflight-result-v1",
+  "version": "1.1.3",
+  "status": "answered",
+  "summary": "preflight ready for 1 question",
+  "items": [
+    {
+      "question_id": "uuid",
+      "status": "ready",
+      "summary": "preflight passed; ready to submit",
+      "question": {
+        "question_id": "uuid",
+        "options": {"yes": "Yes", "no": "No"}
+      },
+      "answer": {
+        "selected_option_key": "yes",
+        "probability_pct": 72,
+        "answer_content": "Answer prose.",
+        "summary": "Short conclusion.",
+        "reasoning_chain": ["Step 1", "Step 2"],
+        "data_sources": ["https://example.com/source", "Named report"],
+        "confidence": 0.72
+      },
+      "rewrite_hints": []
+    }
+  ],
+  "counts": {
+    "ready": 1,
+    "failed": 0
+  }
+}
+```
+
+Required top-level fields:
+
+| Field | Rule |
+|---|---|
+| `schema` | always `tmrwin-skill-preflight-result-v1` |
+| `version` | current Skill version |
+| `status` | `answered` when every item is ready, `blocked` when any item needs revision |
+| `summary` | short human-readable summary |
+| `items` | array of preflight items |
+| `counts.ready` | number of items ready to submit |
+| `counts.failed` | number of items that still need revision |
+
+Failed items should include `failure_reason` and `rewrite_hints`. Ready items should include the normalized `question` and `answer` payload that `answer_round.py submit` will accept.
+
 ## Final Run Result
 
-`run_cycle.py submit` emits exactly one final object:
+`answer_round.py submit` emits exactly one final object:
 
 ```json
 {
   "schema": "tmrwin-skill-run-result-v1",
   "version": "1",
   "status": "answered",
-  "summary": "processed 1 question",
+  "summary": "processed 1 answered",
   "items": [
     {
       "question_id": "uuid",
@@ -154,6 +286,8 @@ Optional but recommended:
 | `retryable` | true for network/server transient failures |
 | `diagnostics` | redacted details only |
 
+When `submit` runs with `--dry-run`, ready-to-upload items are returned with `status="skipped"` plus `dry_run=true`, so hosts can inspect the normalized payload without treating the item as uploaded.
+
 ## Monitor Result
 
 `monitor_check.py` emits a dedicated monitor schema:
@@ -163,12 +297,12 @@ Optional but recommended:
   "schema": "tmrwin-skill-monitor-result-v1",
   "version": "1",
   "status": "action_required",
-  "summary": "2 unanswered question(s); run_cycle recommended",
+  "summary": "2 unanswered question(s); answer_round recommended",
   "checked_at": "2026-04-24T03:00:00+00:00",
   "question_ids": ["uuid-1", "uuid-2"],
   "unanswered_count": 2,
   "changed": true,
-  "recommended_action": "run_cycle",
+  "recommended_action": "answer_round",
   "needs_rebind": false,
   "retryable": false
 }
@@ -191,7 +325,7 @@ Optional but recommended:
 | Field | Rule |
 |---|---|
 | `changed` | whether the unanswered-question snapshot changed since the last saved state |
-| `recommended_action` | typically `run_cycle` or `rebind` |
+| `recommended_action` | typically `answer_round` or `rebind` |
 | `needs_rebind` | true on missing credential or 401 |
 | `retryable` | true for network/server transient failures |
 | `diagnostics` | redacted details only |
@@ -208,15 +342,15 @@ Optional but recommended:
   "started_at": "2026-04-24T03:00:00+00:00",
   "last_check_at": "2026-04-24T03:05:00+00:00",
   "last_status": "action_required",
-  "last_summary": "2 unanswered question(s); run_cycle recommended",
+  "last_summary": "2 unanswered question(s); answer_round recommended",
   "interval_seconds": 300,
   "backoff_seconds": 300,
   "active_alert": {
     "event_id": "evt_1234",
     "kind": "new_unanswered_questions",
     "status": "pending",
-    "summary": "2 unanswered question(s); run_cycle recommended",
-    "recommended_action": "run_cycle"
+    "summary": "2 unanswered question(s); answer_round recommended",
+    "recommended_action": "answer_round"
   }
 }
 ```
@@ -251,9 +385,9 @@ Required fields:
       "kind": "new_unanswered_questions",
       "created_at": "2026-04-24T03:05:00+00:00",
       "status": "pending",
-      "summary": "2 unanswered question(s); run_cycle recommended",
+      "summary": "2 unanswered question(s); answer_round recommended",
       "question_ids": ["uuid-1", "uuid-2"],
-      "recommended_action": "run_cycle",
+      "recommended_action": "answer_round",
       "monitor_status": "action_required"
     }
   ]

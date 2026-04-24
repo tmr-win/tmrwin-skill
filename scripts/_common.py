@@ -25,8 +25,25 @@ DEFAULT_UPDATE_STRATEGY = "repo_distribution"
 DEFAULT_GATEWAY_BASE_URL = "https://tmr.win"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_QUESTIONS = 1
+MIN_PROBABILITY_PCT = 55
+MAX_PROBABILITY_PCT = 99
+MIN_REASONING_TOTAL_CHARS = 100
+MIN_PREFLIGHT_REASONING_TOTAL_CHARS = 160
+MIN_PREFLIGHT_REASONING_STEPS = 2
+MIN_PREFLIGHT_ANSWER_CHARS_EXCLUSIVE = 200
+MIN_PREFLIGHT_SUMMARY_CHARS = 12
+MIN_PREFLIGHT_SOURCE_COUNT = 2
+ANSWER_REQUIRED_FIELDS = (
+    "selected_option_key",
+    "probability_pct",
+    "answer_content",
+    "summary",
+    "reasoning_chain",
+    "data_sources",
+)
 RUN_RESULT_SCHEMA = "tmrwin-skill-run-result-v1"
 QUESTION_CONTEXT_SCHEMA = "tmrwin-skill-question-context-v1"
+PREFLIGHT_RESULT_SCHEMA = "tmrwin-skill-preflight-result-v1"
 MONITOR_RESULT_SCHEMA = "tmrwin-skill-monitor-result-v1"
 DAEMON_STATUS_SCHEMA = "tmrwin-skill-daemon-status-v1"
 NOTIFICATIONS_SCHEMA = "tmrwin-skill-notifications-v1"
@@ -138,6 +155,41 @@ def print_json(payload: dict[str, Any]) -> None:
     """Write exactly one JSON object to stdout."""
 
     sys.stdout.write(json.dumps(redact(payload), ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def answer_contract() -> dict[str, Any]:
+    """Return the current answer contract for host-generated drafts."""
+
+    return {
+        "required_fields": list(ANSWER_REQUIRED_FIELDS),
+        "optional_fields": ["confidence"],
+        "probability_pct_range": [MIN_PROBABILITY_PCT, MAX_PROBABILITY_PCT],
+        "selected_option_source": "question.options",
+        "legacy_normalization": {
+            "probability": "probability_pct",
+            "arguments": "answer_content/summary when unambiguous",
+            "stance": "selected_option_key when it maps cleanly to a question option",
+        },
+    }
+
+
+def preflight_contract() -> dict[str, Any]:
+    """Return the stricter preflight thresholds used before upload."""
+
+    return {
+        "summary_min_chars": MIN_PREFLIGHT_SUMMARY_CHARS,
+        "answer_content_min_chars": MIN_PREFLIGHT_ANSWER_CHARS_EXCLUSIVE,
+        "answer_content_min_chars_operator": ">",
+        "reasoning_chain": {
+            "min_steps": MIN_PREFLIGHT_REASONING_STEPS,
+            "min_total_chars": MIN_PREFLIGHT_REASONING_TOTAL_CHARS,
+        },
+        "data_sources": {
+            "min_items": MIN_PREFLIGHT_SOURCE_COUNT,
+            "require_specific_source": True,
+        },
+        "probability_pct_range": [MIN_PROBABILITY_PCT, MAX_PROBABILITY_PCT],
+    }
 
 
 def print_diagnostic(message: str) -> None:
@@ -743,6 +795,32 @@ def run_result(
     return result
 
 
+def preflight_result(
+    *,
+    status: str,
+    summary: str,
+    items: list[dict[str, Any]] | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a batch preflight result payload."""
+
+    safe_items = items or []
+    result: dict[str, Any] = {
+        "schema": PREFLIGHT_RESULT_SCHEMA,
+        "version": SKILL_VERSION,
+        "status": status,
+        "summary": summary,
+        "items": safe_items,
+        "counts": {
+            "ready": sum(1 for item in safe_items if item.get("status") == "ready"),
+            "failed": sum(1 for item in safe_items if item.get("status") == "failed"),
+        },
+    }
+    if diagnostics:
+        result["diagnostics"] = diagnostics
+    return result
+
+
 def monitor_result(
     *,
     status: str,
@@ -939,7 +1017,7 @@ def validate_answer_draft(question: dict[str, Any], draft: dict[str, Any]) -> tu
         return False, "gate_selected_option_invalid"
 
     probability = normalized.get("probability_pct")
-    if isinstance(probability, bool) or not isinstance(probability, int) or probability <= 50 or probability > 99:
+    if isinstance(probability, bool) or not isinstance(probability, int) or probability < MIN_PROBABILITY_PCT or probability > MAX_PROBABILITY_PCT:
         return False, "gate_probability_out_of_range"
 
     answer_content = str(normalized.get("answer_content") or "").strip()
@@ -950,7 +1028,7 @@ def validate_answer_draft(question: dict[str, Any], draft: dict[str, Any]) -> tu
     if not isinstance(reasoning_chain, list):
         return False, "gate_reasoning_chain_too_short"
     reasoning_items = [str(item).strip() for item in reasoning_chain if str(item).strip()]
-    if not reasoning_items or sum(len(item) for item in reasoning_items) < 100:
+    if not reasoning_items or sum(len(item) for item in reasoning_items) < MIN_REASONING_TOTAL_CHARS:
         return False, "gate_reasoning_chain_too_short"
 
     data_sources = normalized.get("data_sources")
@@ -983,27 +1061,161 @@ def is_meaningful_source(value: Any) -> bool:
     return bool(text) and text.lower() not in PLACEHOLDER_SOURCES
 
 
-def submit_answer(question: dict[str, Any], draft: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
-    """Submit a single answer after local gates pass."""
+def is_specific_source(value: Any) -> bool:
+    """Return whether a source looks specific enough for preflight review."""
+
+    text = str(value or "").strip()
+    if not is_meaningful_source(text):
+        return False
+    lowered = text.lower()
+    if lowered.startswith(("http://", "https://")):
+        return True
+    token_count = len([token for token in text.replace("/", " ").replace("-", " ").split() if token.strip()])
+    return token_count >= 2
+
+
+def rewrite_hints_for_failure_reason(failure_reason: str) -> list[str]:
+    """Return host-facing rewrite guidance for a failed gate or preflight review."""
+
+    hints = {
+        "gate_selected_option_invalid": [
+            "Pick a selected_option_key that exists in question.options.",
+            "If you started from yes/no reasoning, map it to the concrete option key before resubmitting.",
+        ],
+        "gate_probability_out_of_range": [
+            f"Use an integer probability_pct between {MIN_PROBABILITY_PCT} and {MAX_PROBABILITY_PCT}.",
+            "Avoid floats, 50, 100, and midpoint-style uncertainty values.",
+        ],
+        "gate_answer_content_missing": [
+            "Write answer_content as a standalone conclusion plus supporting analysis.",
+            "Make the answer body explicit instead of leaving it empty or implied by the summary.",
+        ],
+        "gate_reasoning_chain_too_short": [
+            "Expand reasoning_chain into explicit premise-to-conclusion steps.",
+            f"Provide enough detail to exceed {MIN_REASONING_TOTAL_CHARS} total characters.",
+        ],
+        "gate_data_sources_missing": [
+            "Add at least one meaningful source before retrying.",
+            "Prefer URLs, named datasets, official reports, or identifiable precedents over placeholders.",
+        ],
+        "gate_confidence_out_of_range": [
+            "Set confidence to a number between 0 and 1, or omit it.",
+        ],
+        "preflight_summary_too_short": [
+            f"Expand summary so it clearly states the conclusion in at least {MIN_PREFLIGHT_SUMMARY_CHARS} characters.",
+            "Make the summary readable on its own instead of relying on the answer body for the main claim.",
+        ],
+        "preflight_answer_content_too_short": [
+            f"Develop answer_content beyond {MIN_PREFLIGHT_ANSWER_CHARS_EXCLUSIVE} characters.",
+            "Include the core thesis, supporting evidence, and why the selected option is favored.",
+        ],
+        "preflight_reasoning_needs_more_depth": [
+            f"Use at least {MIN_PREFLIGHT_REASONING_STEPS} reasoning steps with {MIN_PREFLIGHT_REASONING_TOTAL_CHARS}+ total characters.",
+            "Show how the cited evidence leads to the selected option instead of listing isolated facts.",
+        ],
+        "preflight_data_sources_too_few": [
+            f"Add at least {MIN_PREFLIGHT_SOURCE_COUNT} meaningful sources before submitting.",
+            "Use a mix of direct URLs and named primary sources when available.",
+        ],
+        "preflight_data_sources_not_specific": [
+            "Include at least one specific URL or clearly identifiable named source.",
+            "Replace generic references with the exact report, dataset, release, or announcement you used.",
+        ],
+        "preflight_required": [
+            "Run answer_round.py preflight first and submit the resulting ready items.",
+            "Use the preflight output as the source of truth for what is safe to upload.",
+        ],
+    }
+    return list(hints.get(failure_reason, ["Revise the draft to satisfy the current answer contract and preflight contract."]))
+
+
+def preflight_submission_question(question: dict[str, Any]) -> dict[str, Any]:
+    """Build the minimal question payload preserved across preflight and submit."""
+
+    item = {"question_id": str(question.get("question_id") or "").strip()}
+    if isinstance(question.get("options"), dict):
+        item["options"] = question.get("options")
+    if question.get("question_text"):
+        item["question_text"] = question.get("question_text")
+    return item
+
+
+def preflight_answer_draft(question: dict[str, Any], draft: dict[str, Any]) -> tuple[bool, dict[str, Any] | str]:
+    """Run a stricter pre-submit review intended to catch likely low-quality drafts."""
+
+    is_valid, payload_or_reason = validate_answer_draft(question, draft)
+    if not is_valid:
+        return False, payload_or_reason
+
+    payload = dict(payload_or_reason)
+    summary = str(payload.get("summary") or "").strip()
+    if len(summary) < MIN_PREFLIGHT_SUMMARY_CHARS:
+        return False, "preflight_summary_too_short"
+
+    answer_content = str(payload.get("answer_content") or "").strip()
+    if len(answer_content) <= MIN_PREFLIGHT_ANSWER_CHARS_EXCLUSIVE:
+        return False, "preflight_answer_content_too_short"
+
+    reasoning_items = [str(item).strip() for item in payload.get("reasoning_chain", []) if str(item).strip()]
+    if len(reasoning_items) < MIN_PREFLIGHT_REASONING_STEPS or sum(len(item) for item in reasoning_items) < MIN_PREFLIGHT_REASONING_TOTAL_CHARS:
+        return False, "preflight_reasoning_needs_more_depth"
+
+    source_items = [str(item).strip() for item in payload.get("data_sources", []) if is_meaningful_source(item)]
+    if len(source_items) < MIN_PREFLIGHT_SOURCE_COUNT:
+        return False, "preflight_data_sources_too_few"
+    if not any(is_specific_source(item) for item in source_items):
+        return False, "preflight_data_sources_not_specific"
+
+    payload["summary"] = summary
+    payload["answer_content"] = answer_content
+    payload["reasoning_chain"] = reasoning_items
+    payload["data_sources"] = source_items
+    return True, payload
+
+
+def preflight_answer(question: dict[str, Any], draft: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate whether an answer draft is ready to submit."""
 
     question_id = str(question.get("question_id") or "").strip()
     if not question_id:
         raise SkillError("invalid_input", "question_id is required")
-    is_valid, payload_or_reason = validate_answer_draft(question, draft)
-    if not is_valid:
+    is_ready, payload_or_reason = preflight_answer_draft(question, draft)
+    if not is_ready:
         return {
             "question_id": question_id,
             "status": "failed",
             "failure_reason": payload_or_reason,
-            "summary": f"local gate failed: {payload_or_reason}",
+            "summary": f"preflight failed: {payload_or_reason}",
+            "rewrite_hints": rewrite_hints_for_failure_reason(str(payload_or_reason)),
         }
-    payload = payload_or_reason
+    payload = dict(payload_or_reason)
+    return {
+        "question_id": question_id,
+        "status": "ready",
+        "summary": "preflight passed; ready to submit",
+        "question": preflight_submission_question(question),
+        "answer": payload,
+        "rewrite_hints": [],
+    }
+
+
+def submit_answer(question: dict[str, Any], draft: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
+    """Submit a single answer after local gates pass."""
+
+    preflight = preflight_answer(question, draft)
+    question_id = str(preflight.get("question_id") or "")
+    if preflight.get("status") != "ready":
+        return preflight
+    payload = dict(preflight.get("answer") or {})
     if dry_run:
         return {
             "question_id": question_id,
-            "status": "answered",
-            "summary": "dry-run gate passed; submit skipped",
+            "status": "skipped",
+            "summary": "dry-run preflight passed; submit skipped",
             "dry_run": True,
+            "question": preflight.get("question"),
+            "answer": payload,
+            "rewrite_hints": [],
         }
     try:
         response = agent_post(f"/api/v1/agent/questions/{urllib.parse.quote(question_id)}/answers", payload)

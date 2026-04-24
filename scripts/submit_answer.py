@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from _common import error_result, print_json, read_json_file, read_json_input, submit_answer, SkillError
+from _common import error_result, preflight_answer, print_json, read_json_file, read_json_input, submit_answer, SkillError
 from pathlib import Path
 
 
@@ -17,6 +17,7 @@ def main() -> int:
     parser.add_argument("--draft-file", default="-")
     parser.add_argument("--options-json", default=None)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -42,8 +43,8 @@ def main() -> int:
             draft = draft_input
         else:
             raise SkillError("invalid_input", "answer draft must be a JSON object")
-        item = submit_answer(question, draft, dry_run=args.dry_run)
-        status = "ok" if item.get("status") in {"answered", "skipped"} else "failed"
+        item = preflight_answer(question, draft) if args.preflight_only else submit_answer(question, draft, dry_run=args.dry_run)
+        status = "ok" if item.get("status") in {"answered", "skipped", "ready"} else "failed"
         print_json({"schema": "tmrwin-skill-submit-answer-v1", "status": status, "item": item})
         return 0 if status == "ok" else 2
     except SkillError as exc:

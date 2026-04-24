@@ -74,7 +74,7 @@ Required before submit:
 | Field | Rule |
 |---|---|
 | `selected_option_key` | non-empty and present in the question `options` when options are known |
-| `probability_pct` | integer, greater than 50 and not greater than 99 for prediction answers |
+| `probability_pct` | integer from 55 through 99 for prediction answers |
 | `answer_content` | non-empty human-readable answer |
 | `reasoning_chain` | non-empty list with enough total text |
 | `data_sources` | non-empty list of meaningful URLs or named sources |

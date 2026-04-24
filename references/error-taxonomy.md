@@ -16,7 +16,7 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 | Status | Meaning |
 |---|---|
 | `idle` | credential is valid and no actionable unanswered-question change was detected |
-| `action_required` | unanswered-question set changed and `run_cycle` is recommended |
+| `action_required` | unanswered-question set changed and `answer_round` is recommended |
 | `binding_required` | credential is missing, corrupt, expired, or rejected |
 | `blocked` | service, schema, or local state prevents a safe monitor decision |
 
@@ -33,11 +33,17 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 | Code | Trigger | Retry |
 |---|---|---|
 | `gate_selected_option_invalid` | selected option is missing or not in known options | regenerate draft |
-| `gate_probability_out_of_range` | probability is not integer 51..99 | regenerate draft |
+| `gate_probability_out_of_range` | probability is not integer 55..99 | regenerate draft |
 | `gate_answer_content_missing` | answer body is empty | regenerate draft |
 | `gate_reasoning_chain_too_short` | reasoning is absent or too short | regenerate draft |
 | `gate_data_sources_missing` | sources are absent or placeholder-like | regenerate draft |
 | `gate_confidence_out_of_range` | confidence is outside 0..1 | regenerate draft |
+| `preflight_summary_too_short` | summary is missing or too short for a reviewable conclusion | regenerate draft |
+| `preflight_answer_content_too_short` | answer body is too short to stand on its own | regenerate draft |
+| `preflight_reasoning_needs_more_depth` | reasoning needs more steps or total depth | regenerate draft |
+| `preflight_data_sources_too_few` | source list is too thin for submission | regenerate draft |
+| `preflight_data_sources_not_specific` | sources are too generic and need a specific citation | regenerate draft |
+| `preflight_required` | submit received drafts that were not marked ready by preflight | rerun preflight and submit only ready items |
 | `already_submitted` | submit returned 409 or equivalent duplicate | no |
 | `binding_expired` | Agent API returned 401 | start rebind flow and ask the user only for browser confirmation |
 | `server_rejected` | non-duplicate 4xx | no automatic retry |
@@ -65,12 +71,12 @@ Use stable error codes so any host can make the same retry, rebind, or skip deci
 ## Monitor Rules
 
 - `401` during monitor becomes `binding_required`, and the host should stop credential-dependent checks, start rebind itself, and ask the user only for the browser confirmation step.
-- `action_required` is not a failure. It means the Skill detected a changed unanswered-question set and recommends `run_cycle`.
+- `action_required` is not a failure. It means the Skill detected a changed unanswered-question set and recommends `answer_round`.
 - A corrupt saved monitor snapshot should not block monitoring. Surface it as a redacted diagnostic warning and continue with a fresh baseline.
 
 ## Daemon Rules
 
-- The daemon never submits answers. It only creates notifications recommending `run_cycle`, `rebind`, or inspection.
+- The daemon never submits answers. It only creates notifications recommending `answer_round`, `rebind`, or inspection.
 - Notifications are deduplicated by `alert_key`; the same unresolved alert is not recreated on every poll.
 - `ack` means "seen", not "never alert again". A changed unanswered-question set still creates a new event.
 - `binding_required` and `blocked` degrade the retry cadence instead of terminating the daemon permanently.
