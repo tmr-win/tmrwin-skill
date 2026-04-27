@@ -119,11 +119,6 @@ def resume_existing_session(args: argparse.Namespace) -> tuple[dict[str, object]
                 key_id=str(credential.get("key_id") or "") or None,
                 key_prefix=str(credential.get("key_prefix") or "") or None,
                 bound_at=str(credential.get("bound_at") or "") or None,
-                awp_link_advisory=(
-                    polled.get("awp_link_advisory")
-                    if isinstance(polled.get("awp_link_advisory"), dict)
-                    else None
-                ),
                 summary="agent credential is ready",
             ),
             0,

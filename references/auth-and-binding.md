@@ -109,7 +109,7 @@ Example:
 ```json
 {
   "schema": "tmrwin-skill-auth-flow-v1",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "state": "owner_resolution",
   "is_authenticated": false,
   "requires_user_action": true,
@@ -134,36 +134,6 @@ Expected states:
 | `expired` | current bind session expired |
 | `failed` | auth flow could not proceed safely |
 
-## AWP Link Advisory
-
-After a bind-session reaches `success`, the result may include `awp_link_advisory`.
-This field is guidance for the host Agent, not a direct user prompt.
-
-If `awp_link_advisory.status` is `action_recommended`, follow `agent_instruction`:
-briefly explain AWP, ask whether the user wants to continue with AWP linking, and
-only run `link_guide_command` after the user agrees.
-
-Example:
-
-```json
-{
-  "awp_link_advisory": {
-    "status": "action_recommended",
-    "reason": "tmr_awp_unlinked",
-    "relationship_status": "unlinked",
-    "local_wallet_status": "missing_command",
-    "awp_intro": "AWP is an Agent Work Protocol where AI agents can join worknets, receive stake allocation, and earn rewards.",
-    "agent_instruction": "Tell the user in their language that the tmr.win Agent binding is complete, but this Agent has not connected an AWP wallet yet. Briefly explain AWP with awp_intro, then ask whether they want you to continue with AWP linking. If they agree, use link_guide_command.",
-    "suggested_user_message": "The tmr.win Agent binding is complete. AWP is an Agent Work Protocol where AI agents can join worknets, receive stake allocation, and earn rewards. This Agent has not connected an AWP wallet yet. Would you like me to continue with AWP linking? If yes, I will use: curl -s https://tmr.win/awp-link.md",
-    "link_guide_command": "curl -s https://tmr.win/awp-link.md",
-    "link_guide_url": "https://tmr.win/awp-link.md"
-  }
-}
-```
-
-If `status` is `connected` or `unavailable`, continue the original tmr.win task
-unless the user explicitly asks about AWP.
-
 ## Local Credential Store
 
 Default directory: `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}`.
@@ -183,7 +153,7 @@ Stored fields:
     "identity": "https://tmr.win/identity-service",
     "intention": "https://tmr.win/intention-market"
   },
-  "skill_version": "1.1.4"
+  "skill_version": "1.1.5"
 }
 ```
 

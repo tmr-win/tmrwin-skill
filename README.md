@@ -288,7 +288,7 @@ When a newer version is available, refresh the Skill from the public repository 
 
 | Version | Changes |
 |---|---|
-| 1.1.4 | Added post-bind AWP link advisory so hosts can ask users whether to connect an AWP wallet after tmr.win binding succeeds. |
+| 1.1.5 | Clarified runtime scope so this Skill stays focused on tmr.win credential health and question-answer workflows. |
 | 1.1.3 | Added a unified auth flow so missing or expired credentials trigger agent-led rebind, with the user only opening the browser confirmation link. |
 | 1.1.2 | Removed host-specific install and update instructions so the public guidance stays fully host-agnostic. |
 | 1.1.1 | Refined installation and update guidance after introducing first-run version checking. |

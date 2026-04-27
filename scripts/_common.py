@@ -6,10 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
-import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -21,19 +18,13 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SKILL_NAME = "tmrwin-skill"
-DEFAULT_SKILL_VERSION = "1.1.4"
+DEFAULT_SKILL_VERSION = "1.1.5"
 DEFAULT_REPO_URL = "https://github.com/tmr-win/tmrwin-skill"
 DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json"
 DEFAULT_UPDATE_STRATEGY = "repo_distribution"
 DEFAULT_GATEWAY_BASE_URL = "https://tmr.win"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_MAX_QUESTIONS = 1
-AWP_LINK_GUIDE_URL = "https://tmr.win/awp-link.md"
-AWP_INTRO = (
-    "AWP is an Agent Work Protocol where AI agents can join worknets, "
-    "receive stake allocation, and earn rewards."
-)
-ETH_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 MIN_PROBABILITY_PCT = 55
 MAX_PROBABILITY_PCT = 99
 MIN_REASONING_TOTAL_CHARS = 100
@@ -497,14 +488,6 @@ def poll_bind_session(
     effective_session_id = session_id or session_data.get("session_id") or data.get("session_id")
     if binding_status == "bound" and data.get("api_key"):
         saved = save_credentials(data, base_urls)
-        credentials = {
-            "api_key": str(data.get("api_key") or ""),
-            "agent_id": saved.get("agent_id"),
-            "key_id": saved.get("key_id"),
-            "key_prefix": saved.get("key_prefix"),
-            "bound_at": saved.get("bound_at"),
-            "base_urls": {"identity": base_urls.identity, "intention": base_urls.intention},
-        }
         return {
             "schema": "tmrwin-skill-bind-poll-v1",
             "status": "authenticated",
@@ -513,17 +496,11 @@ def poll_bind_session(
             "bind_url": bind_url,
             "expires_at": data.get("expires_at") or session_data.get("expires_at"),
             "credential": saved,
-            "awp_link_advisory": build_post_bind_awp_link_advisory(credentials=credentials, base_urls=base_urls),
             "summary": "bind completed; credential saved locally",
         }
     if binding_status == "consumed":
         try:
             credential = load_credentials()
-            credential_base_urls = resolve_base_urls(
-                identity_base_url=identity_base_url,
-                intention_base_url=intention_base_url,
-                credentials=credential,
-            )
             return {
                 "schema": "tmrwin-skill-bind-poll-v1",
                 "status": "authenticated",
@@ -537,10 +514,6 @@ def poll_bind_session(
                     "key_prefix": credential.get("key_prefix"),
                     "bound_at": credential.get("bound_at"),
                 },
-                "awp_link_advisory": build_post_bind_awp_link_advisory(
-                    credentials=credential,
-                    base_urls=credential_base_urls,
-                ),
                 "summary": "bind result was already consumed; existing local credential is available",
             }
         except SkillError:
@@ -607,264 +580,6 @@ def check_current_agent(
         "key_prefix": credentials.get("key_prefix"),
         "bound_at": credentials.get("bound_at"),
         "summary": "current Agent credential is accepted",
-    }
-
-
-def normalize_eth_address_for_compare(value: object) -> str | None:
-    """Normalize an EVM address for case-insensitive comparison."""
-
-    address = str(value or "").strip()
-    if not ETH_ADDRESS_PATTERN.fullmatch(address):
-        return None
-    return address.lower()
-
-
-def extract_awp_wallet_address(payload: Any) -> str | None:
-    """Extract the EOA wallet address from awp-wallet JSON output."""
-
-    if isinstance(payload, dict):
-        for key in ("eoaAddress", "address", "walletAddress", "awpWalletAddress"):
-            normalized = normalize_eth_address_for_compare(payload.get(key))
-            if normalized:
-                return normalized
-    if isinstance(payload, str):
-        match = re.search(r"0x[a-fA-F0-9]{40}", payload)
-        if match:
-            return match.group(0).lower()
-    return None
-
-
-def read_local_awp_wallet_summary() -> dict[str, Any]:
-    """Read the local AWP wallet address without creating or mutating wallet state."""
-
-    if shutil.which("awp-wallet") is None:
-        return {"local_wallet_status": "missing_command"}
-    try:
-        completed = subprocess.run(
-            ["awp-wallet", "receive"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-    except subprocess.TimeoutExpired:
-        return {"local_wallet_status": "timeout"}
-    except OSError as exc:
-        return {
-            "local_wallet_status": "unavailable",
-            "diagnostic": safe_error_body(str(exc)),
-        }
-    if completed.returncode != 0:
-        diagnostic = safe_error_body(f"{completed.stdout} {completed.stderr}")
-        status = "missing_wallet" if "No wallet found" in diagnostic else "unavailable"
-        return {"local_wallet_status": status, "diagnostic": diagnostic}
-
-    output = completed.stdout.strip()
-    payload: Any
-    try:
-        payload = json.loads(output)
-    except json.JSONDecodeError:
-        payload = output
-    address = extract_awp_wallet_address(payload)
-    if not address:
-        return {
-            "local_wallet_status": "invalid_response",
-            "diagnostic": safe_error_body(output),
-        }
-    return {
-        "local_wallet_status": "available",
-        "local_awp_wallet_address": address,
-    }
-
-
-def identity_get(
-    path: str,
-    *,
-    params: dict[str, Any] | None = None,
-    credentials: dict[str, Any] | None = None,
-    base_urls: ServiceBaseUrls | None = None,
-    timeout: int = DEFAULT_TIMEOUT_SECONDS,
-) -> Any:
-    """Call a read-only identity-service Agent API route."""
-
-    creds = credentials or load_credentials()
-    urls = base_urls or resolve_base_urls(credentials=creds)
-    query = build_query(params or {})
-    url = url_join(urls.identity, path)
-    if query:
-        url = f"{url}?{query}"
-    return request_json("GET", url, headers=bearer_headers(creds), timeout=timeout)
-
-
-def awp_link_guide_fields(relationship: dict[str, Any] | None) -> dict[str, str]:
-    """Resolve the public tmr AWP link guide fields from service data or defaults."""
-
-    relationship = relationship or {}
-    link_guide_url = str(relationship.get("wrapper_skill_url") or AWP_LINK_GUIDE_URL).strip()
-    link_guide_command = str(relationship.get("wrapper_install_command") or f"curl -s {link_guide_url}").strip()
-    return {
-        "link_guide_url": link_guide_url,
-        "link_guide_command": link_guide_command,
-    }
-
-
-def build_awp_action_advisory(
-    *,
-    relationship: dict[str, Any] | None,
-    local_wallet: dict[str, Any],
-    reason: str,
-    agent_instruction: str,
-    suggested_user_message: str,
-) -> dict[str, Any]:
-    """Build an Agent-facing advisory that asks the host model to talk to the user."""
-
-    relationship = relationship or {}
-    advisory: dict[str, Any] = {
-        "status": "action_recommended",
-        "reason": reason,
-        "relationship_status": str(relationship.get("status") or "unknown"),
-        "local_wallet_status": str(local_wallet.get("local_wallet_status") or "unknown"),
-        "awp_intro": AWP_INTRO,
-        "agent_instruction": agent_instruction,
-        "suggested_user_message": suggested_user_message,
-        **awp_link_guide_fields(relationship),
-    }
-    awp_wallet_address = normalize_eth_address_for_compare(relationship.get("awp_wallet_address"))
-    local_awp_wallet_address = normalize_eth_address_for_compare(local_wallet.get("local_awp_wallet_address"))
-    if awp_wallet_address:
-        advisory["awp_wallet_address"] = awp_wallet_address
-    if local_awp_wallet_address:
-        advisory["local_awp_wallet_address"] = local_awp_wallet_address
-    return advisory
-
-
-def build_post_bind_awp_link_advisory(
-    *,
-    credentials: dict[str, Any],
-    base_urls: ServiceBaseUrls,
-) -> dict[str, Any]:
-    """Return optional AWP guidance after tmr Agent binding succeeds."""
-
-    try:
-        relationship_raw = identity_get(
-            "/api/v1/agent-awp-links/current",
-            credentials=credentials,
-            base_urls=base_urls,
-            timeout=12,
-        )
-        relationship = unwrap_identity_response(relationship_raw)
-    except SkillError as exc:
-        return {
-            "status": "unavailable",
-            "reason": "tmr_awp_status_unavailable",
-            "relationship_status": "unknown",
-            "local_wallet_status": "not_checked",
-            "agent_instruction": "Do not block the completed tmr.win binding. Continue the original task unless the user explicitly asks about AWP linking.",
-            "diagnostics": {
-                "failure_reason": exc.code,
-                "http_status": exc.http_status,
-            },
-            **awp_link_guide_fields(None),
-        }
-
-    local_wallet = read_local_awp_wallet_summary()
-    relationship_status = str(relationship.get("status") or "unknown")
-    linked_address = normalize_eth_address_for_compare(relationship.get("awp_wallet_address"))
-    local_address = normalize_eth_address_for_compare(local_wallet.get("local_awp_wallet_address"))
-
-    if relationship_status == "active" and linked_address and local_address == linked_address:
-        return {
-            "status": "connected",
-            "reason": "tmr_awp_active_local_wallet_matched",
-            "relationship_status": "active",
-            "local_wallet_status": "matched",
-            "awp_wallet_address": linked_address,
-            "local_awp_wallet_address": local_address,
-            "agent_instruction": "No user-facing AWP prompt is needed. Continue the original tmr.win task.",
-        }
-
-    if relationship_status == "active" and linked_address:
-        if local_address:
-            return build_awp_action_advisory(
-                relationship=relationship,
-                local_wallet=local_wallet,
-                reason="local_awp_wallet_mismatch",
-                agent_instruction=(
-                    "Tell the user in their language that the tmr.win Agent binding is complete, "
-                    "and that this Agent already has an AWP wallet linked on tmr.win, but the local AWP wallet "
-                    "on this machine does not match it. Briefly explain AWP with awp_intro, then ask whether "
-                    "they want you to inspect or reconnect the AWP link. If they agree, use link_guide_command."
-                ),
-                suggested_user_message=(
-                    "The tmr.win Agent binding is complete. AWP is an Agent Work Protocol where AI agents can "
-                    "join worknets, receive stake allocation, and earn rewards. This Agent already has an AWP "
-                    "wallet linked on tmr.win, but the local AWP wallet on this machine is different. Would you "
-                    "like me to inspect or reconnect the AWP link? If yes, I will use: "
-                    f"{awp_link_guide_fields(relationship)['link_guide_command']}"
-                ),
-            )
-        return build_awp_action_advisory(
-            relationship=relationship,
-            local_wallet=local_wallet,
-            reason="local_awp_wallet_missing",
-            agent_instruction=(
-                "Tell the user in their language that the tmr.win Agent binding is complete, "
-                "and that this Agent already has an AWP wallet linked on tmr.win, but no usable local AWP wallet "
-                "was found on this machine. Briefly explain AWP with awp_intro, then ask whether they want you "
-                "to restore or reconnect the AWP link. If they agree, use link_guide_command."
-            ),
-            suggested_user_message=(
-                "The tmr.win Agent binding is complete. AWP is an Agent Work Protocol where AI agents can join "
-                "worknets, receive stake allocation, and earn rewards. This Agent already has an AWP wallet "
-                "linked on tmr.win, but I cannot find a usable local AWP wallet on this machine. Would you like "
-                "me to restore or reconnect the AWP link? If yes, I will use: "
-                f"{awp_link_guide_fields(relationship)['link_guide_command']}"
-            ),
-        )
-
-    if relationship_status in {"unlinked", "revoked"}:
-        return build_awp_action_advisory(
-            relationship=relationship,
-            local_wallet=local_wallet,
-            reason="tmr_awp_unlinked",
-            agent_instruction=(
-                "Tell the user in their language that the tmr.win Agent binding is complete, "
-                "but this Agent has not connected an AWP wallet yet. Briefly explain AWP with awp_intro, "
-                "then ask whether they want you to continue with AWP linking. If they agree, use link_guide_command."
-            ),
-            suggested_user_message=(
-                "The tmr.win Agent binding is complete. AWP is an Agent Work Protocol where AI agents can join "
-                "worknets, receive stake allocation, and earn rewards. This Agent has not connected an AWP wallet "
-                "yet. Would you like me to continue with AWP linking? If yes, I will use: "
-                f"{awp_link_guide_fields(relationship)['link_guide_command']}"
-            ),
-        )
-
-    if relationship_status in {"pending_verification", "stale"}:
-        return build_awp_action_advisory(
-            relationship=relationship,
-            local_wallet=local_wallet,
-            reason=f"tmr_awp_{relationship_status}",
-            agent_instruction=(
-                "Tell the user in their language that the tmr.win Agent binding is complete, "
-                "but the AWP relationship is not fully active yet. Briefly explain AWP with awp_intro, "
-                "then ask whether they want you to finish or refresh the AWP link. If they agree, use link_guide_command."
-            ),
-            suggested_user_message=(
-                "The tmr.win Agent binding is complete. AWP is an Agent Work Protocol where AI agents can join "
-                "worknets, receive stake allocation, and earn rewards. The AWP link for this Agent is not fully "
-                "active yet. Would you like me to finish or refresh it? If yes, I will use: "
-                f"{awp_link_guide_fields(relationship)['link_guide_command']}"
-            ),
-        )
-
-    return {
-        "status": "unavailable",
-        "reason": "tmr_awp_status_unknown",
-        "relationship_status": relationship_status,
-        "local_wallet_status": str(local_wallet.get("local_wallet_status") or "unknown"),
-        "agent_instruction": "Do not block the completed tmr.win binding. Continue the original task unless the user explicitly asks about AWP linking.",
-        **awp_link_guide_fields(relationship),
     }
 
 
@@ -1156,7 +871,6 @@ def auth_flow_result(
     expires_at: str | None = None,
     retryable: bool = False,
     failure_reason: str | None = None,
-    awp_link_advisory: dict[str, Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a unified authentication flow result."""
@@ -1187,8 +901,6 @@ def auth_flow_result(
         result["expires_at"] = expires_at
     if failure_reason:
         result["failure_reason"] = failure_reason
-    if awp_link_advisory:
-        result["awp_link_advisory"] = awp_link_advisory
     if diagnostics:
         result["diagnostics"] = diagnostics
     return result
