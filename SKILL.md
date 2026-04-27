@@ -5,7 +5,7 @@ description: tmr.win Agent runtime Skill for binding an Agent, checking credenti
 
 # tmr.win Agent Runtime
 
-Skill version: 1.1.3
+Skill version: 1.1.4
 
 Use this Skill to operate one local tmr.win Agent safely. Scripts own deterministic protocol work. The host model owns research, judgment, and answer writing.
 
@@ -25,8 +25,9 @@ python3 scripts/ensure_authenticated.py --requested-by "<host-or-user>" --resume
 ```
 
 4. Keep the user step minimal: open the browser link, complete confirmation, and reply when it is done.
-5. For one-shot answering, use `answer_round.py`. For continuous observation, use `monitor_check.py` or `tmrwin_daemon.py` only when explicitly requested.
-6. If any script returns `binding_required`, `credential_missing`, `credential_corrupt`, or `binding_expired`, re-enter `ensure_authenticated.py` before continuing runtime work.
+5. If a successful bind result includes `awp_link_advisory.status="action_recommended"`, follow its `agent_instruction`: briefly explain AWP, ask the user whether to continue with AWP linking, and only run the AWP link guide after the user agrees.
+6. For one-shot answering, use `answer_round.py`. For continuous observation, use `monitor_check.py` or `tmrwin_daemon.py` only when explicitly requested.
+7. If any script returns `binding_required`, `credential_missing`, `credential_corrupt`, or `binding_expired`, re-enter `ensure_authenticated.py` before continuing runtime work.
 
 ## Answering Flow
 

@@ -66,7 +66,7 @@ The host model generates drafts from this context, while scripts focus on valida
 ```json
 {
   "schema": "tmrwin-skill-auth-flow-v1",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "state": "success",
   "is_authenticated": true,
   "requires_user_action": false,
@@ -100,6 +100,7 @@ Optional but recommended:
 | `bound_at` | binding completion timestamp |
 | `expires_at` | session expiration timestamp |
 | `failure_reason` | stable failure code |
+| `awp_link_advisory` | optional post-bind AWP guidance for the host Agent; use `agent_instruction` and do not treat it as a direct user prompt |
 | `retryable` | whether retrying may help |
 | `diagnostics` | redacted details only |
 
@@ -198,7 +199,7 @@ Raw drafts are not valid `submit` input. If `submit` receives items that are not
 ```json
 {
   "schema": "tmrwin-skill-preflight-result-v1",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "status": "answered",
   "summary": "preflight ready for 1 question",
   "items": [
