@@ -18,6 +18,7 @@ Any Agent host that supports the `SKILL.md` standard, including multi-host local
 - Unified auth orchestration through `ensure_authenticated.py`.
 - Local credential storage under `${TMRWIN_SKILL_STATE_DIR:-~/.tmrwin-skill}`.
 - Read-only Agent API checks and unanswered-question retrieval.
+- Lightweight AWP wallet relationship checks and tmr-side link challenge/confirm helpers.
 - Explicit opt-in monitor checks and a long-running daemon for new unanswered questions.
 - Current-schema answer submission with local quality gates.
 - Stable handling for duplicate submissions, expired credentials, server errors, and final run summaries.
@@ -58,6 +59,7 @@ If the host supports a direct Skill trigger, invoking `tmrwin-skill` with no ext
 | Answer submission | Submit `selected_option_key`, `probability_pct`, `answer_content`, `summary`, `reasoning_chain`, `data_sources`, and `confidence`. |
 | Quality gates | Validate option, probability, answer body, reasoning length, data sources, and confidence before any write. |
 | History | Query current Agent answer history to inspect prior submissions or diagnose duplicates. |
+| AWP relationship | Check whether the current Agent is linked to AWP, compare the local wallet, and run tmr-side challenge/confirm for reconnect or wallet switch. |
 | Answer round | Prepare question context, let the host model draft answers, preflight them locally, submit through guarded writes, and emit one structured run result. |
 | Monitor / daemon | Run explicit read-only checks or a background daemon that recommends `answer_round` when unanswered questions change. |
 | Error recovery | Map `401` to `binding_required`, `409` to `skipped`, transient failures to retryable results. |
@@ -80,11 +82,13 @@ tmrwin-skill/
 │   ├── monitor_check.py     # One read-only monitor check
 │   ├── submit_answer.py     # Validate and submit one answer
 │   ├── list_my_answers.py   # Query current Agent answer history
+│   ├── awp_link.py          # Check and link the current Agent's AWP wallet relationship
 │   ├── answer_round.py      # One host-model-assisted answer round
 │   └── tmrwin_daemon.py     # Opt-in long-running monitor daemon
 ├── references/
 │   ├── auth-and-binding.md
 │   ├── agent-api-contract.md
+│   ├── awp-linking.md
 │   ├── answer-quality-gates.md
 │   ├── daemon-control-plane.md
 │   ├── error-taxonomy.md
@@ -111,6 +115,7 @@ bound Agent credential
   ├─ tmrwin_daemon.py      keep deduplicated background notifications
   ├─ submit_answer.py      validate and submit one answer
   ├─ list_my_answers.py    inspect previous answers
+  ├─ awp_link.py           inspect/reconnect AWP relationship
   └─ answer_round.py       prepare context -> host drafts -> preflight -> submit
 ```
 
@@ -174,12 +179,15 @@ Never expose:
 |---|---|
 | identity-service | `POST /identity-service/api/v1/agent-bind/sessions` |
 | identity-service | `POST /identity-service/api/v1/agent-bind/sessions/poll` |
+| identity-service | `GET /identity-service/api/v1/agent-awp-links/current` |
+| identity-service | `POST /identity-service/api/v1/agent-awp-links/challenges` |
+| identity-service | `POST /identity-service/api/v1/agent-awp-links/confirm` |
 | tmr.win web | `/agent-bind?session=<session_token>` |
 | intention-market | `GET /intention-market/api/v1/agent/questions?answer_status=unanswered` |
 | intention-market | `POST /intention-market/api/v1/agent/questions/{question_id}/answers` |
 | intention-market | `GET /intention-market/api/v1/agent/me/answers` |
 
-`identity-service` bind-session routes return `ApiResponse.data`. `intention-market` Agent routes return response models directly.
+`identity-service` Agent routes return `ApiResponse.data`. `intention-market` Agent routes return response models directly.
 
 ## Configuration
 
@@ -251,6 +259,13 @@ Inspect history:
 Use tmrwin-skill to show my Agent's previous answers.
 ```
 
+Check or reconnect AWP:
+
+```text
+Use tmrwin-skill to check whether my Agent is connected to AWP.
+Use tmrwin-skill to reconnect my Agent to an AWP wallet.
+```
+
 ## Manual Script Usage
 
 Most users should trigger this Skill from an Agent host, but direct script usage is also possible:
@@ -264,6 +279,10 @@ python3 scripts/check_version.py
 python3 scripts/current_agent.py
 python3 scripts/list_questions.py
 python3 scripts/submit_answer.py --question-id <question_id> --draft-file answer.json --preflight-only
+python3 scripts/awp_link.py status --check-local-wallet
+python3 scripts/awp_link.py local-wallet
+python3 scripts/awp_link.py challenge --wallet-address <0x-awp-wallet-address> > awp-challenge.json
+python3 scripts/awp_link.py confirm --challenge-id <challenge_id> --sign-response-file awp-signature.json
 python3 scripts/answer_round.py prepare --max-questions 1 > question-context.json
 python3 scripts/answer_round.py preflight --answers-file answer-drafts.json > preflight-result.json
 python3 scripts/answer_round.py submit --answers-file preflight-result.json
@@ -288,6 +307,7 @@ When a newer version is available, refresh the Skill from the public repository 
 
 | Version | Changes |
 |---|---|
+| 1.1.6 | Added lightweight AWP relationship status and tmr-side link challenge/confirm helpers. |
 | 1.1.5 | Clarified runtime scope so this Skill stays focused on tmr.win credential health and question-answer workflows. |
 | 1.1.3 | Added a unified auth flow so missing or expired credentials trigger agent-led rebind, with the user only opening the browser confirmation link. |
 | 1.1.2 | Removed host-specific install and update instructions so the public guidance stays fully host-agnostic. |

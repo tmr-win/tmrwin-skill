@@ -109,7 +109,7 @@ Example:
 ```json
 {
   "schema": "tmrwin-skill-auth-flow-v1",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "state": "owner_resolution",
   "is_authenticated": false,
   "requires_user_action": true,
@@ -153,7 +153,7 @@ Stored fields:
     "identity": "https://tmr.win/identity-service",
     "intention": "https://tmr.win/intention-market"
   },
-  "skill_version": "1.1.5"
+  "skill_version": "1.1.6"
 }
 ```
 
@@ -178,4 +178,4 @@ For explicit rebind, create a fresh bind-session and keep the old credential fil
 
 ## Envelope Difference
 
-`identity-service` bind-session routes return `ApiResponse.data`. `intention-market` Agent routes currently return response models directly, so parse each service with its own envelope rule.
+`identity-service` Agent routes return `ApiResponse.data`. `intention-market` Agent routes currently return response models directly, so parse each service with its own envelope rule.

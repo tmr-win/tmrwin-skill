@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -18,13 +19,15 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SKILL_NAME = "tmrwin-skill"
-DEFAULT_SKILL_VERSION = "1.1.5"
+DEFAULT_SKILL_VERSION = "1.1.6"
 DEFAULT_REPO_URL = "https://github.com/tmr-win/tmrwin-skill"
 DEFAULT_MANIFEST_URL = "https://raw.githubusercontent.com/tmr-win/tmrwin-skill/main/version.json"
 DEFAULT_UPDATE_STRATEGY = "repo_distribution"
 DEFAULT_GATEWAY_BASE_URL = "https://tmr.win"
 DEFAULT_TIMEOUT_SECONDS = 30
+DEFAULT_AWP_CHAIN_ID = 8453
 DEFAULT_MAX_QUESTIONS = 1
+EVM_ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
 MIN_PROBABILITY_PCT = 55
 MAX_PROBABILITY_PCT = 99
 MIN_REASONING_TOTAL_CHARS = 100
@@ -681,6 +684,19 @@ def unwrap_identity_response(raw: Any) -> dict[str, Any]:
     return data
 
 
+def normalize_evm_address(value: Any, *, field_name: str = "address", allow_empty: bool = False) -> str | None:
+    """Normalize an EVM address for case-insensitive tmr/AWP comparisons."""
+
+    address = str(value or "").strip()
+    if not address:
+        if allow_empty:
+            return None
+        raise SkillError("invalid_input", f"{field_name} is required")
+    if not EVM_ADDRESS_PATTERN.fullmatch(address):
+        raise SkillError("invalid_input", f"{field_name} must be a 0x EVM address")
+    return address.lower()
+
+
 def bearer_headers(credentials: dict[str, Any]) -> dict[str, str]:
     """Build Agent API authorization headers."""
 
@@ -729,6 +745,42 @@ def agent_post(
     creds = credentials or load_credentials()
     urls = base_urls or resolve_base_urls(credentials=creds)
     return request_json("POST", url_join(urls.intention, path), payload=payload, headers=bearer_headers(creds), timeout=timeout)
+
+
+def identity_agent_get(
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    credentials: dict[str, Any] | None = None,
+    base_urls: ServiceBaseUrls | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Call a read-only identity-service Agent API route and unwrap ApiResponse.data."""
+
+    creds = credentials or load_credentials()
+    urls = base_urls or resolve_base_urls(credentials=creds)
+    query = build_query(params or {})
+    url = url_join(urls.identity, path)
+    if query:
+        url = f"{url}?{query}"
+    raw = request_json("GET", url, headers=bearer_headers(creds), timeout=timeout)
+    return unwrap_identity_response(raw)
+
+
+def identity_agent_post(
+    path: str,
+    payload: dict[str, Any],
+    *,
+    credentials: dict[str, Any] | None = None,
+    base_urls: ServiceBaseUrls | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Call a write identity-service Agent API route and unwrap ApiResponse.data."""
+
+    creds = credentials or load_credentials()
+    urls = base_urls or resolve_base_urls(credentials=creds)
+    raw = request_json("POST", url_join(urls.identity, path), payload=payload, headers=bearer_headers(creds), timeout=timeout)
+    return unwrap_identity_response(raw)
 
 
 def fetch_unanswered_questions(

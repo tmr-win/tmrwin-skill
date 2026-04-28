@@ -66,7 +66,7 @@ The host model generates drafts from this context, while scripts focus on valida
 ```json
 {
   "schema": "tmrwin-skill-auth-flow-v1",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "state": "success",
   "is_authenticated": true,
   "requires_user_action": false,
@@ -198,7 +198,7 @@ Raw drafts are not valid `submit` input. If `submit` receives items that are not
 ```json
 {
   "schema": "tmrwin-skill-preflight-result-v1",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "status": "answered",
   "summary": "preflight ready for 1 question",
   "items": [
@@ -488,3 +488,40 @@ Daemon not started:
 ## Single-Round Limit
 
 Default `prepare` limit is conservative: one question. Lower it with `--max-questions 1` or `TMRWIN_SKILL_MAX_QUESTIONS=1`. The script never increases above the explicit CLI limit.
+
+## AWP Link Result
+
+`awp_link.py` emits `tmrwin-skill-awp-link-v1` for status checks, local-wallet checks, challenge creation, and confirm results.
+
+Status check example:
+
+```json
+{
+  "schema": "tmrwin-skill-awp-link-v1",
+  "version": "1.1.6",
+  "operation": "status",
+  "status": "ok",
+  "summary": "AWP relationship status is active",
+  "relationship_status": "active",
+  "relationship_next_action": "none",
+  "relationship": {
+    "status": "active",
+    "status_reason": "none",
+    "next_action": "none",
+    "awp_wallet_address": "0x...",
+    "awp_resolved_recipient_address": "0x..."
+  },
+  "local_wallet": {
+    "status": "available",
+    "is_available": true,
+    "awp_wallet_address": "0x...",
+    "matches_linked_wallet": true
+  },
+  "awp_intro": "AWP is an Agent Work Protocol where AI agents can join worknets, receive stake allocation, and earn rewards.",
+  "bootstrap_guide_url": "https://tmr.win/skill.md",
+  "bootstrap_guide_command": "curl -s https://tmr.win/skill.md",
+  "recommended_action": "none"
+}
+```
+
+Challenge creation returns the tmr `identity-service` challenge data under `data`. The host should sign `data.typed_data` with `awp-wallet sign-typed-data` and submit only the returned `.signature` through the `confirm` operation.

@@ -10,7 +10,7 @@ Never write the header value to chat, stdout, stderr, or persisted diagnostics.
 
 ## Service Envelope
 
-`intention-market` Agent routes currently return response models directly, not `ApiResponse.data`. This differs from `identity-service` bind-session.
+`intention-market` Agent routes currently return response models directly, not `ApiResponse.data`. `identity-service` Agent routes return an `ApiResponse` envelope, so scripts must read fields from `data`.
 
 ## List Questions
 
@@ -138,6 +138,94 @@ There is no dedicated `/agent/me` endpoint in the current contract. `current_age
 | `authenticated` | credential exists and service accepted it |
 | `binding_required` | credential is missing, corrupt, or rejected with 401 |
 | `blocked` | network, service, or response shape prevents a reliable answer |
+
+## AWP Relationship
+
+These routes are identity-service Agent routes and return `ApiResponse.data`.
+
+### Current AWP Link
+
+`GET /identity-service/api/v1/agent-awp-links/current?chain_id=8453`
+
+Response `data` fields:
+
+```json
+{
+  "agent_id": "uuid",
+  "chain_id": 8453,
+  "status": "active",
+  "status_reason": "none",
+  "next_action": "none",
+  "awp_wallet_address": "0x...",
+  "awp_bound_to_address": null,
+  "awp_resolved_recipient_address": "0x...",
+  "verification_method": "wallet_signature",
+  "verified_at": "2026-04-23T12:00:00+00:00",
+  "last_synced_at": "2026-04-23T12:00:00+00:00",
+  "awp_balance_summary": null,
+  "wrapper_skill_url": "https://tmr.win/skill.md",
+  "wrapper_install_command": "curl -s https://tmr.win/skill.md",
+  "official_awp_skill_url": "https://github.com/awp-core/awp-skill",
+  "official_awp_website_url": "https://awp.pro/"
+}
+```
+
+`status` values:
+
+| Status | Meaning |
+|---|---|
+| `unlinked` | No active relationship exists |
+| `pending_verification` | Proof was accepted but AWP topology is not fully confirmed |
+| `active` | Relationship is verified |
+| `stale` | Relationship needs a fresh link confirmation |
+| `revoked` | Relationship was removed |
+
+### Create Challenge
+
+`POST /identity-service/api/v1/agent-awp-links/challenges`
+
+Request:
+
+```json
+{
+  "chain_id": 8453,
+  "awp_wallet_address": "0x...",
+  "requested_by": "tmrwin-skill",
+  "skill_name": "tmrwin-skill"
+}
+```
+
+Response `data` fields:
+
+```json
+{
+  "challenge_id": "awp_link_...",
+  "agent_id": "uuid",
+  "chain_id": 8453,
+  "awp_wallet_address": "0x...",
+  "typed_data": {},
+  "expires_at": "2026-04-23T12:10:00+00:00"
+}
+```
+
+Sign `data.typed_data` with the local AWP wallet and submit only the returned `.signature`.
+
+### Confirm Link
+
+`POST /identity-service/api/v1/agent-awp-links/confirm`
+
+Request:
+
+```json
+{
+  "challenge_id": "awp_link_...",
+  "signature": "0x..."
+}
+```
+
+Response `data` has the same relationship summary shape as `current`.
+
+Address comparisons should be case-insensitive.
 
 ## HTTP Mapping
 
